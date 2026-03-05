@@ -4,6 +4,7 @@
  */
 import dotenv from "dotenv";
 dotenv.config();
+dotenv.config({ path: ".env.local", override: true });
 
 const OTEL_ENABLED = process.env.OTEL_ENABLED !== "false";
 const OTLP_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318/v1/traces";

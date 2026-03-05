@@ -1,7 +1,9 @@
 import dotenv from "dotenv";
 import { z } from "zod";
 
+// Load .env first, then .env.local (overrides) so local dev can use .env.local
 dotenv.config();
+dotenv.config({ path: ".env.local", override: true });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "staging", "production"]).default("development"),

@@ -25,6 +25,7 @@ export async function authenticate(
     const usersColl = getUsersCollection(database);
 
     let user = await usersColl.findOne({ firebaseUid: decoded.uid });
+    const isEmailVerified = Boolean(decoded.email_verified);
 
     if (!user && email) {
       const now = new Date();
@@ -32,13 +33,19 @@ export async function authenticate(
         firebaseUid: decoded.uid,
         email,
         role: "user",
-        isEmailVerified: Boolean(decoded.email_verified),
+        isEmailVerified,
         isEligibleForCoupons: false,
         createdAt: now,
         updatedAt: now,
       };
       await usersColl.insertOne(newUser as UserDocument & { _id?: import("mongodb").ObjectId });
       user = await usersColl.findOne({ firebaseUid: decoded.uid });
+    } else if (user && user.isEmailVerified !== isEmailVerified) {
+      await usersColl.updateOne(
+        { firebaseUid: decoded.uid },
+        { $set: { isEmailVerified, updatedAt: new Date() } }
+      );
+      user = { ...user, isEmailVerified, updatedAt: new Date() };
     }
 
     if (!user) {
