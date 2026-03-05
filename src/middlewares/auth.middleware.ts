@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { firebaseAdminAuth } from "../config/firebase-admin";
-import { UserModel } from "../models/user.model";
+import { getDb } from "../config/database";
+import { getUsersCollection } from "../lib/db/collections";
+import type { UserDocument } from "../lib/db/types";
 
 export async function authenticate(
   req: Request,
@@ -17,16 +19,26 @@ export async function authenticate(
     }
 
     const decoded = await firebaseAdminAuth.verifyIdToken(token);
-    const email = decoded.email ?? "";
+    const email = (decoded.email ?? "").toLowerCase().trim();
 
-    let user = await UserModel.findOne({ firebaseUid: decoded.uid });
+    const database = getDb();
+    const usersColl = getUsersCollection(database);
+
+    let user = await usersColl.findOne({ firebaseUid: decoded.uid });
+
     if (!user && email) {
-      user = await UserModel.create({
+      const now = new Date();
+      const newUser: UserDocument = {
         firebaseUid: decoded.uid,
         email,
         role: "user",
         isEmailVerified: Boolean(decoded.email_verified),
-      });
+        isEligibleForCoupons: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await usersColl.insertOne(newUser as UserDocument & { _id?: import("mongodb").ObjectId });
+      user = await usersColl.findOne({ firebaseUid: decoded.uid });
     }
 
     if (!user) {
@@ -38,6 +50,8 @@ export async function authenticate(
       uid: decoded.uid,
       email: decoded.email,
       role: user.role,
+      isEmailVerified: user.isEmailVerified,
+      isEligibleForCoupons: user.isEligibleForCoupons ?? false,
     };
 
     next();

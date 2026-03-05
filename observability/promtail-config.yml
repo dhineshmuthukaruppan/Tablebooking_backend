@@ -1,0 +1,29 @@
+# Promtail config: scrape backend JSON logs from stdout or a log file.
+# For local dev, run the backend and pipe stdout to a file, or use a sidecar that streams stdout.
+# This example scrapes a log file; adjust path to match where you write backend logs.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: tablebooking-backend
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: tablebooking-backend
+          __path__: /var/log/tablebooking-backend.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+      - output:
+          source: message

@@ -1,0 +1,39 @@
+# Observability stack: Loki (logs), Promtail (log shipper), Grafana (dashboards).
+# Optional: run an OTLP collector (e.g. otelcol) and point OTEL_EXPORTER_OTLP_ENDPOINT to it for traces.
+# Usage: docker compose -f docker-compose.observability.yml up -d
+# Then: configure Grafana data source for Loki (http://loki:3100).
+
+services:
+  loki:
+    image: grafana/loki:2.9.4
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_HTTP_PORT=3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+
+volumes:
+  loki-data:
+  grafana-data:

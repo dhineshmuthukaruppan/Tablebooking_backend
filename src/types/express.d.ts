@@ -7,6 +7,8 @@ declare global {
         uid: string;
         email?: string;
         role: Role;
+        isEmailVerified?: boolean;
+        isEligibleForCoupons?: boolean;
       };
     }
   }

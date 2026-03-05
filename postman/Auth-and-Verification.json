@@ -1,0 +1,88 @@
+{
+  "info": {
+    "name": "Auth & Verification",
+    "description": "Table Booking Backend – Auth and admin user endpoints. Set `baseUrl` (e.g. http://localhost:5000/api/v1) and `bearerToken` (Firebase ID token from client after login).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api/v1" },
+    { "key": "bearerToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Get current user (me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/me",
+            "description": "Returns the authenticated user profile (uid, email, role, isEmailVerified, isEligibleForCoupons). Obtain bearerToken from Firebase: after signInWithEmailAndPassword, call user.getIdToken()."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin – Users",
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "role", "value": "user", "disabled": true },
+                { "key": "isEmailVerified", "value": "true", "disabled": true },
+                { "key": "isEligibleForCoupons", "value": "false", "disabled": true }
+              ]
+            },
+            "description": "Paginated list of users. Requires admin role. Query params: page, limit, role, isEmailVerified, isEligibleForCoupons."
+          }
+        },
+        {
+          "name": "Update user (role / isEligibleForCoupons)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\",\n  \"isEligibleForCoupons\": true\n}"
+            },
+            "url": "{{baseUrl}}/admin/users/:id",
+            "description": "Update a user's role and/or isEligibleForCoupons. Requires admin role. Replace :id with the user's MongoDB _id."
+          }
+        }
+      ]
+    }
+  ]
+}
