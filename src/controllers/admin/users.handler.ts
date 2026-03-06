@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
-import { getDb } from "../../config/database";
-import { getUsersCollection } from "../../lib/db/collections";
+import db from "../../databaseUtilities";
 import { ROLES, type Role } from "../../constants/roles";
 
 export async function getUsersHandler(req: Request, res: Response): Promise<void> {
@@ -12,8 +11,7 @@ export async function getUsersHandler(req: Request, res: Response): Promise<void
     const isEmailVerified = Array.isArray(req.query.isEmailVerified) ? req.query.isEmailVerified[0] : req.query.isEmailVerified;
     const isEligibleForCoupons = Array.isArray(req.query.isEligibleForCoupons) ? req.query.isEligibleForCoupons[0] : req.query.isEligibleForCoupons;
 
-    const db = getDb();
-    const usersColl = getUsersCollection(db);
+    const connectionString = db.constants.connectionStrings.tableBooking;
 
     const filter: Record<string, unknown> = {};
     if (role && ROLES.includes(role)) filter.role = role;
@@ -24,13 +22,22 @@ export async function getUsersHandler(req: Request, res: Response): Promise<void
 
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
-      usersColl
-        .find(filter, { projection: { firebaseUid: 0 } })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .toArray(),
-      usersColl.countDocuments(filter),
+      db.read.find({
+        req,
+        connectionString,
+        collection: "users",
+        query: filter,
+        projection: { firebaseUid: 0 },
+        sort: { createdAt: -1 },
+        skip,
+        limit,
+      }),
+      db.read.count({
+        req,
+        connectionString,
+        collection: "users",
+        query: filter,
+      }),
     ]);
 
     res.status(200).json({
@@ -59,13 +66,15 @@ export async function patchUserHandler(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const db = getDb();
-    const usersColl = getUsersCollection(db);
-    const result = await usersColl.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      { $set: update },
-      { returnDocument: "after", projection: { firebaseUid: 0 } }
-    );
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const result = await db.update.findOneAndUpdate({
+      req,
+      connectionString,
+      collection: "users",
+      query: { _id: new ObjectId(id) },
+      update: { $set: update },
+      options: { returnDocument: "after", projection: { firebaseUid: 0 } },
+    });
 
     if (!result) {
       res.status(404).json({ message: "User not found" });

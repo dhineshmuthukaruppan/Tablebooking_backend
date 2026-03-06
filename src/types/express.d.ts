@@ -6,6 +6,7 @@ declare global {
       user?: {
         uid: string;
         email?: string;
+        displayName?: string;
         role: Role;
         isEmailVerified?: boolean;
         isEligibleForCoupons?: boolean;

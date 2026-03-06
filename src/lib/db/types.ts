@@ -4,6 +4,7 @@ export interface UserDocument {
   _id?: import("mongodb").ObjectId;
   firebaseUid: string;
   email: string;
+  displayName?: string;
   role: Role;
   isEmailVerified: boolean;
   isEligibleForCoupons?: boolean;

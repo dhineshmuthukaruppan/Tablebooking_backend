@@ -1,12 +1,21 @@
 import "./instrumentation";
+import type { Application } from "express";
 import { app } from "./app";
-import { connectDatabase } from "./config/database";
+import { connectDatabase, getDb, getClient } from "./config/database";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
+
+const CONNECTION_KEY = "tableBooking";
+
+function attachDatabaseToApp(appInstance: Application): void {
+  (appInstance.locals as Record<string, unknown>)[CONNECTION_KEY + "DB"] = getDb();
+  (appInstance.locals as Record<string, unknown>)[CONNECTION_KEY + "CLIENT"] = getClient();
+}
 
 async function bootstrap(): Promise<void> {
   try {
     await connectDatabase();
+    attachDatabaseToApp(app);
     app.listen(env.PORT, () => {
       logger.info(`Backend running on http://localhost:${env.PORT}`);
     });

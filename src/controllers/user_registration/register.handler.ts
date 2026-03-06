@@ -1,65 +1,57 @@
 import type { Request, Response } from "express";
-import { getDb } from "../../config/database";
-import { getUsersCollection } from "../../lib/db/collections";
-import type { UserDocument } from "../../lib/db/types";
-import { verifyIdToken } from "../../lib/auth/verifyFirebaseToken";
+import db from "../../databaseUtilities";
 
 export interface RegisterBody {
-  idToken?: string;
+  displayName?: string;
 }
 
+/**
+ * Expects req.user set by auth.authentication.authenticate (Bearer token in header).
+ * Updates the user in MongoDB with displayName from body and returns profile.
+ */
 export async function registerHandler(req: Request, res: Response): Promise<void> {
   try {
-    const { idToken } = (req.body as RegisterBody) ?? {};
-    const decoded = await verifyIdToken(idToken);
-    if (!decoded) {
-      res.status(401).json({ message: "Invalid or missing idToken" });
+    const userFromAuth = req.user;
+    if (!userFromAuth?.uid) {
+      res.status(401).json({ message: "Not authenticated" });
       return;
     }
 
-    const email = (decoded.email ?? "").toLowerCase().trim();
-    if (!email) {
-      res.status(400).json({ message: "Email is required" });
-      return;
-    }
+    const { displayName } = (req.body as RegisterBody) ?? {};
+    const displayNameTrimmed =
+      typeof displayName === "string" ? displayName.trim() : undefined;
 
-    const db = getDb();
-    const usersColl = getUsersCollection(db);
-    const isEmailVerified = Boolean(decoded.email_verified);
-
-    let user = await usersColl.findOne({ firebaseUid: decoded.uid });
+    const connectionString = db.constants.connectionStrings.tableBooking;
     const now = new Date();
 
-    if (!user) {
-      const newUser: UserDocument = {
-        firebaseUid: decoded.uid,
-        email,
-        role: "user",
-        isEmailVerified,
-        isEligibleForCoupons: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await usersColl.insertOne(
-        newUser as UserDocument & { _id?: import("mongodb").ObjectId }
-      );
-      user = await usersColl.findOne({ firebaseUid: decoded.uid });
-    } else {
-      await usersColl.updateOne(
-        { firebaseUid: decoded.uid },
-        { $set: { isEmailVerified, updatedAt: now } }
-      );
-      user = await usersColl.findOne({ firebaseUid: decoded.uid });
-    }
+    await db.update.updateOne({
+      req,
+      connectionString,
+      collection: "users",
+      query: { firebaseUid: userFromAuth.uid },
+      update: {
+        $set: {
+          ...(displayNameTrimmed !== undefined && displayNameTrimmed !== "" && { displayName: displayNameTrimmed }),
+          updatedAt: now,
+        },
+      },
+    });
 
+    const user = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "users",
+      query: { firebaseUid: userFromAuth.uid },
+    }) as { email: string; displayName?: string; role: string; isEmailVerified: boolean; isEligibleForCoupons?: boolean } | null;
     if (!user) {
-      res.status(500).json({ message: "Failed to create user" });
+      res.status(500).json({ message: "User not found" });
       return;
     }
 
     const profile = {
-      uid: decoded.uid,
+      uid: userFromAuth.uid,
       email: user.email,
+      displayName: user.displayName,
       role: user.role,
       isEmailVerified: user.isEmailVerified,
       isEligibleForCoupons: user.isEligibleForCoupons ?? false,
@@ -70,6 +62,6 @@ export async function registerHandler(req: Request, res: Response): Promise<void
       data: profile,
     });
   } catch {
-    res.status(401).json({ message: "Invalid or expired authentication token" });
+    res.status(500).json({ message: "Registration failed" });
   }
 }

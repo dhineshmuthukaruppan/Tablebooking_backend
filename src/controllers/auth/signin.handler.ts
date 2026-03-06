@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
-import { getDb } from "../../config/database";
-import { getUsersCollection } from "../../lib/db/collections";
+import db from "../../databaseUtilities";
 import { verifyIdToken } from "../../lib/auth/verifyFirebaseToken";
 
 export interface SigninBody {
@@ -16,9 +15,14 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const db = getDb();
-    const usersColl = getUsersCollection(db);
-    let user = await usersColl.findOne({ firebaseUid: decoded.uid });
+    const connectionString = db.constants.connectionStrings.tableBooking;
+
+    let user = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "users",
+      query: { firebaseUid: decoded.uid },
+    }) as { email: string; role: string; isEmailVerified: boolean; isEligibleForCoupons?: boolean } | null;
 
     if (!user) {
       res.status(403).json({
@@ -29,10 +33,13 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
 
     const isEmailVerified = Boolean(decoded.email_verified);
     if (user.isEmailVerified !== isEmailVerified) {
-      await usersColl.updateOne(
-        { firebaseUid: decoded.uid },
-        { $set: { isEmailVerified, updatedAt: new Date() } }
-      );
+      await db.update.updateOne({
+        req,
+        connectionString,
+        collection: "users",
+        query: { firebaseUid: decoded.uid },
+        update: { $set: { isEmailVerified, updatedAt: new Date() } },
+      });
       user = { ...user, isEmailVerified };
     }
 

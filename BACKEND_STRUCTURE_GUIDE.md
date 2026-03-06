@@ -10,17 +10,18 @@ Use this document to keep the backend aligned with a **domain-based** layout. Th
 - Domains are represented by:
   - **Routes**: `src/routes/<domain>/` (e.g. `routes/auth/`, `routes/admin/`)
   - **Controllers**: `src/controllers/<domain>/` (e.g. `controllers/auth/`, `controllers/admin/`)
-- Shared pieces: `config/`, `services/`, `lib/`, `middlewares/`.
+- Shared pieces: `config/`, `databaseUtilities/`, `services/`, `lib/`, `middlewares/`.
 
 ```
 Tablebooking_backend/src/
-├── config/           # Environment, Firebase, DB, logger
-├── controllers/      # Domain-based handlers (no modules wrapper)
-├── lib/              # DB collections/types, auth helpers (e.g. verifyFirebaseToken)
-├── middlewares/      # Auth, RBAC, error, not-found
-├── routes/           # Route aggregator + domain route folders
-├── services/         # Auth (authentication, privilege)
-├── constants/        # e.g. roles
+├── config/              # Environment, Firebase, DB, logger
+├── controllers/         # Domain-based handlers (no modules wrapper)
+├── databaseUtilities/   # MongoDB read, create, update; constants (dbTables, connectionStrings)
+├── lib/                 # DB types, auth helpers (e.g. verifyFirebaseToken)
+├── middlewares/         # Auth, RBAC, error, not-found
+├── routes/              # Route aggregator + domain route folders
+├── services/            # Auth (authentication, privilege)
+├── constants/           # e.g. roles
 └── app.ts / server.ts
 ```
 
@@ -53,7 +54,12 @@ controllers/
 ```
 
 - Handlers are **async** and use `(req, res)` or `(req, res, next)`.
-- Dependencies: `config/`, `lib/db/`, `lib/auth/`, `services/` as needed. Use try/catch and send appropriate HTTP status and JSON.
+- **MongoDB access**: Use **databaseUtilities** (`db`), not direct `getDb()`/`getUsersCollection()` in controllers or middleware. Example:
+  - `import db from "../../databaseUtilities";`
+  - `await db.read.findOne({ req, connectionString: db.constants.connectionStrings.tableBooking, collection: "users", query: { firebaseUid } });`
+  - `await db.create.insertOne({ req, connectionString, collection: "users", payload });`
+  - `await db.update.updateOne({ req, connectionString, collection: "users", query, update });`
+- Other dependencies: `config/`, `lib/auth/`, `services/` as needed. Use try/catch and send appropriate HTTP status and JSON.
 
 ---
 
@@ -98,4 +104,5 @@ controllers/
 - [ ] One **routes/index.ts** that imports domain routers and mounts them under the v1 router.
 - [ ] New domain = new folder under `controllers/` and under `routes/` with handler and route files.
 - [ ] Controllers use async handlers and use **config**, **lib**, **services** as needed.
-- [ ] Shared auth/DB helpers live in **lib/** (e.g. `lib/auth/verifyFirebaseToken.ts`) or **services/**.
+- [ ] All MongoDB operations go through **databaseUtilities** (`db.read`, `db.create`, `db.update`, `db.constants`).
+- [ ] Shared auth helpers live in **lib/** (e.g. `lib/auth/verifyFirebaseToken.ts`) or **services/**.

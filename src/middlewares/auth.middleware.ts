@@ -1,7 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { firebaseAdminAuth } from "../config/firebase-admin";
-import { getDb } from "../config/database";
-import { getUsersCollection } from "../lib/db/collections";
+import db from "../databaseUtilities";
 import type { UserDocument } from "../lib/db/types";
 
 export async function authenticate(
@@ -20,11 +19,14 @@ export async function authenticate(
 
     const decoded = await firebaseAdminAuth.verifyIdToken(token);
     const email = (decoded.email ?? "").toLowerCase().trim();
+    const connectionString = db.constants.connectionStrings.tableBooking;
 
-    const database = getDb();
-    const usersColl = getUsersCollection(database);
-
-    let user = await usersColl.findOne({ firebaseUid: decoded.uid });
+    let user = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "users",
+      query: { firebaseUid: decoded.uid },
+    }) as UserDocument | null;
     const isEmailVerified = Boolean(decoded.email_verified);
 
     if (!user && email) {
@@ -38,13 +40,26 @@ export async function authenticate(
         createdAt: now,
         updatedAt: now,
       };
-      await usersColl.insertOne(newUser as UserDocument & { _id?: import("mongodb").ObjectId });
-      user = await usersColl.findOne({ firebaseUid: decoded.uid });
+      await db.create.insertOne({
+        req,
+        connectionString,
+        collection: "users",
+        payload: newUser as unknown as Record<string, unknown>,
+      });
+      user = await db.read.findOne({
+        req,
+        connectionString,
+        collection: "users",
+        query: { firebaseUid: decoded.uid },
+      }) as UserDocument | null;
     } else if (user && user.isEmailVerified !== isEmailVerified) {
-      await usersColl.updateOne(
-        { firebaseUid: decoded.uid },
-        { $set: { isEmailVerified, updatedAt: new Date() } }
-      );
+      await db.update.updateOne({
+        req,
+        connectionString,
+        collection: "users",
+        query: { firebaseUid: decoded.uid },
+        update: { $set: { isEmailVerified, updatedAt: new Date() } },
+      });
       user = { ...user, isEmailVerified, updatedAt: new Date() };
     }
 
@@ -56,6 +71,7 @@ export async function authenticate(
     req.user = {
       uid: decoded.uid,
       email: decoded.email,
+      displayName: user.displayName,
       role: user.role,
       isEmailVerified: user.isEmailVerified,
       isEligibleForCoupons: user.isEligibleForCoupons ?? false,
