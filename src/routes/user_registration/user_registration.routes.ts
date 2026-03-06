@@ -10,7 +10,6 @@ const router = Router();
 
 router.post(
   "/register",
-  auth.authentication.authenticate,
   userRegistrationController.registerHandler
 );
 
