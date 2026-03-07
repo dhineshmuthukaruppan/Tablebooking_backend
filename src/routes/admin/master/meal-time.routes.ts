@@ -14,11 +14,32 @@ router.get(
   masterController.getMealTimeListHandler
 );
 
+router.get(
+  "/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  masterController.getMealTimeByIdHandler
+);
+
 router.post(
   "/",
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
   masterController.addMealTimeHandler
+);
+
+router.put(
+  "/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  masterController.updateMealTimeHandler
+);
+
+router.delete(
+  "/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  masterController.deleteMealTimeHandler
 );
 
 export const mealTimeRoutes = router;

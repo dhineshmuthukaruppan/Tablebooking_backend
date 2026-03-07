@@ -6,6 +6,7 @@ export const dbTables = {
   users: "users",
   guest_date: "guest_date",
   meal_time_master: "meal_time_master",
+  bookings: "bookings",
 } as const;
 
 export const connectionStrings = {

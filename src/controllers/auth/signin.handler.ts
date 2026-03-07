@@ -22,7 +22,7 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
       connectionString,
       collection: "users",
       query: { firebaseUid: decoded.uid },
-    }) as { email: string; role: string; isEmailVerified: boolean; isEligibleForCoupons?: boolean } | null;
+    }) as { _id?: import("mongodb").ObjectId; email: string; displayName?: string; role: string; isEmailVerified: boolean; isEligibleForCoupons?: boolean; createdAt?: Date } | null;
 
     if (!user) {
       res.status(403).json({
@@ -44,11 +44,14 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
     }
 
     const profile = {
+      id: user._id?.toString(),
       uid: decoded.uid,
       email: user.email,
+      displayName: user.displayName,
       role: user.role,
       isEmailVerified: user.isEmailVerified,
       isEligibleForCoupons: user.isEligibleForCoupons ?? false,
+      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : (user.createdAt as string | undefined),
     };
 
     res.status(200).json({

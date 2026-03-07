@@ -69,12 +69,14 @@ export async function authenticate(
     }
 
     req.user = {
+      id: user._id,
       uid: decoded.uid,
       email: decoded.email,
       displayName: user.displayName,
       role: user.role,
       isEmailVerified: user.isEmailVerified,
       isEligibleForCoupons: user.isEligibleForCoupons ?? false,
+      createdAt: user.createdAt,
     };
 
     next();
