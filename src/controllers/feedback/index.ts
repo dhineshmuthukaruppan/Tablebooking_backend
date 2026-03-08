@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { submitFeedbackHandler as submitHandler } from "./feedback.handler";
 
 export function listFeedbackHandler(_req: Request, res: Response): void {
   res.status(200).json({
@@ -7,8 +8,5 @@ export function listFeedbackHandler(_req: Request, res: Response): void {
   });
 }
 
-export function submitFeedbackHandler(_req: Request, res: Response): void {
-  res.status(201).json({
-    message: "Feedback submission scaffold endpoint",
-  });
-}
+export { getFeedbackByBookingIdHandler } from "./feedback.handler";
+export const submitFeedbackHandler = submitHandler;

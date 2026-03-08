@@ -9,7 +9,8 @@ import * as bookingsController from "../../controllers/bookings";
 const router = Router();
 
 router.get("/", auth.authentication.authenticate, bookingsController.listBookingsHandler);
-router.post("/", auth.authentication.authenticate, bookingsController.createBookingHandler);
 router.get("/config", auth.authentication.authenticate, bookingsController.getBookingConfigHandler);
+router.get("/:id", auth.authentication.authenticate, bookingsController.getBookingByIdHandler);
+router.post("/", auth.authentication.authenticate, bookingsController.createBookingHandler);
 
 export const bookingsRoutes = router;

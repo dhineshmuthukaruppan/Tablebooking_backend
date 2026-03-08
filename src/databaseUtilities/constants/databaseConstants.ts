@@ -7,6 +7,7 @@ export const dbTables = {
   guest_date: "guest_date",
   meal_time_master: "meal_time_master",
   bookings: "bookings",
+  feedbacks: "feedbacks",
 } as const;
 
 export const connectionStrings = {

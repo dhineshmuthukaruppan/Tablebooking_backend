@@ -166,6 +166,36 @@ export async function createBookingHandler(req: Request, res: Response): Promise
   }
 }
 
+/** GET /bookings/:id — fetch one booking by id. User can only fetch their own. */
+export async function getBookingByIdHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id || typeof id !== "string" || !ObjectId.isValid(id)) {
+      res.status(400).json({ message: "Invalid booking id" });
+      return;
+    }
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const doc = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "bookings",
+      query: { _id: new ObjectId(id), userId: new ObjectId(userId.toString()) },
+    });
+    if (!doc) {
+      res.status(404).json({ message: "Booking not found" });
+      return;
+    }
+    res.status(200).json({ message: "Booking", data: doc });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 /** Returns guest-dates config and active meal-time sections for the booking flow. */
 export async function getBookingConfigHandler(req: Request, res: Response): Promise<void> {
   try {
