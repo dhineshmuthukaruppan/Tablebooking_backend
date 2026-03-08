@@ -4,22 +4,73 @@ import db from "../../databaseUtilities";
 
 const GUEST_DATE_QUERY = { type: "default" } as const;
 
-/** GET /bookings — with query customerId: that customer's orders; without: all bookings. */
+/** Start of today 00:00:00 UTC, end of today 23:59:59.999 UTC */
+function getTodayRange(): { start: Date; end: Date } {
+  const iso = new Date().toISOString().slice(0, 10);
+  const start = new Date(iso + "T00:00:00.000Z");
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  end.setUTCMilliseconds(-1);
+  return { start, end };
+}
+
+/** GET /bookings — query: customerId (optional), tab=upcoming|past (optional), page (1-based), limit. Server-side pagination. */
 export async function listBookingsHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
     const customerId = typeof req.query.customerId === "string" ? req.query.customerId.trim() : null;
-    const query = customerId ? { userId: new ObjectId(customerId) } : {};
-    const list = await db.read.find({
-      req,
-      connectionString,
-      collection: "bookings",
-      query,
-      sort: { createdAt: -1 },
-    });
+    const tab = typeof req.query.tab === "string" ? req.query.tab.trim().toLowerCase() : null;
+    const page = Math.max(1, parseInt(String(req.query.page ?? 1), 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? 10), 10) || 10));
+    const skip = (page - 1) * limit;
+
+    let query: Record<string, unknown> = {};
+
+    if (tab === "upcoming" || tab === "past") {
+      const userId = customerId || req.user?.id?.toString();
+      if (!userId) {
+        res.status(400).json({ message: "customerId required when tab is used, or sign in" });
+        return;
+      }
+      const { start: startOfToday, end: endOfToday } = getTodayRange();
+      query = { userId: new ObjectId(userId) } as Record<string, unknown>;
+      if (tab === "upcoming") {
+        query.bookingDate = { $gte: startOfToday };
+        query.status = { $in: ["pending", "confirmed"] };
+      } else {
+        query.$and = [
+          { bookingDate: { $lte: endOfToday } },
+          { status: { $nin: ["pending", "confirmed"] } },
+        ];
+      }
+    } else if (customerId) {
+      query = { userId: new ObjectId(customerId) };
+    }
+
+    const [list, total] = await Promise.all([
+      db.read.find({
+        req,
+        connectionString,
+        collection: "bookings",
+        query,
+        sort: { createdAt: -1 },
+        skip,
+        limit,
+      }),
+      db.read.count({
+        req,
+        connectionString,
+        collection: "bookings",
+        query,
+      }),
+    ]);
+
     res.status(200).json({
       message: "Bookings",
       data: list ?? [],
+      total: total ?? 0,
+      page,
+      limit,
     });
   } catch {
     res.status(500).json({ message: "Internal server error" });
