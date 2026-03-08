@@ -3,6 +3,8 @@
  * See BACKEND_STRUCTURE_GUIDE.md. No src/modules layer.
  */
 import { Router } from "express";
+import { auth } from "../services";
+import * as tableMasterController from "../controllers/admin/master/table-master.handler";
 import { authRoutes } from "./auth/auth.routes";
 import { userRegistrationRoutes } from "./user_registration/user_registration.routes";
 import { adminRoutes } from "./admin/admin.routes";
@@ -18,6 +20,7 @@ v1Router.get("/health", (_req, res) => {
     status: "ok",
     service: "table-booking-backend",
     version: "v1",
+    routesRevision: "table-master-2024", // change this after fixing table-master to confirm restart
     time: new Date().toISOString(),
   });
 });
@@ -25,6 +28,20 @@ v1Router.get("/health", (_req, res) => {
 // Auth: signin + me; user_registration: register (both under /auth)
 v1Router.use("/auth", userRegistrationRoutes);
 v1Router.use("/auth", authRoutes);
+
+// Table master: register as direct GET/PUT so path matching is unambiguous (no nested router)
+v1Router.get(
+  "/admin/master/table-master",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  tableMasterController.getTableMasterConfigHandler
+);
+v1Router.put(
+  "/admin/master/table-master",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  tableMasterController.putTableMasterConfigHandler
+);
 
 v1Router.use("/admin", adminRoutes);
 v1Router.use("/bookings", bookingsRoutes);
