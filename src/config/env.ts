@@ -7,7 +7,7 @@ dotenv.config({ path: ".env.local", override: true });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "staging", "production"]).default("development"),
-  PORT: z.coerce.number().default(5000),
+  PORT: z.coerce.number().default(5001),
   MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
   FIREBASE_PROJECT_ID: z.string().min(1, "FIREBASE_PROJECT_ID is required"),
   FIREBASE_CLIENT_EMAIL: z.string().min(1, "FIREBASE_CLIENT_EMAIL is required"),

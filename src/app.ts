@@ -10,10 +10,20 @@ import { v1Router } from "./routes";
 
 const app = express();
 
+// CORS: allow frontend origin so browser preflight (OPTIONS) and actual requests succeed
+const allowedOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
+if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:3000");
+
 app.use(
   cors({
-    origin: env.CORS_ORIGIN,
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 204,
   })
 );
 app.use(helmet());
