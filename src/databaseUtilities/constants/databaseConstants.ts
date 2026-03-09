@@ -6,6 +6,7 @@ export const dbTables = {
   users: "users",
   guest_date: "guest_date",
   meal_time_master: "meal_time_master",
+  table_master: "table_master",
   bookings: "bookings",
   feedbacks: "feedbacks",
 } as const;

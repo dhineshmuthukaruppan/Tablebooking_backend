@@ -9,3 +9,7 @@ export {
   updateMealTimeHandler,
   deleteMealTimeHandler,
 } from "./meal-time.handler";
+export {
+  getTableMasterConfigHandler,
+  putTableMasterConfigHandler,
+} from "./table-master.handler";
