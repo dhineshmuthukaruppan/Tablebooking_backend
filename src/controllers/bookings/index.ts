@@ -3,4 +3,6 @@ export {
   createBookingHandler,
   getBookingByIdHandler,
   getBookingConfigHandler,
+  getSlotsHandler,
+  cancelBookingHandler,
 } from "./bookings.handler";

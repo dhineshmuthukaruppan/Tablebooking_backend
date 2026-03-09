@@ -32,4 +32,11 @@ router.patch(
 
 router.use("/master", masterRoutes);
 
+router.post(
+  "/jobs/cleanup-slot-inventory",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.cleanupSlotInventoryHandler
+);
+
 export const adminRoutes = router;

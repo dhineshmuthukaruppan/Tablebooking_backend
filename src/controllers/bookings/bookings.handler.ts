@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import * as slotInventory from "../../services/slotInventory";
+import * as slotConfigService from "../../services/slotConfig";
 
 const GUEST_DATE_QUERY = { type: "default" } as const;
 
@@ -19,7 +21,7 @@ export async function listBookingsHandler(req: Request, res: Response): Promise<
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
     const customerId = typeof req.query.customerId === "string" ? req.query.customerId.trim() : null;
-    const tab = typeof req.query.tab === "string" ? req.query.tab.trim().toLowerCase() : null;
+  const tab = typeof req.query.tab === "string" ? req.query.tab.trim().toLowerCase() : null;
     const page = Math.max(1, parseInt(String(req.query.page ?? 1), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? 10), 10) || 10));
     const skip = (page - 1) * limit;
@@ -125,6 +127,59 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       return;
     }
 
+    const connectionString = db.constants.connectionStrings.tableBooking;
+
+    const config = await slotConfigService.getSlotConfigForDate(req, sectionId, bookingDate);
+    if (!config) {
+      res.status(400).json({ message: "No slot configuration for this date and section" });
+      return;
+    }
+    const allowedSlots = slotConfigService.generateSlotsFromConfig(config);
+    const slotValid = allowedSlots.some((s) => s.startTime === startTime && s.endTime === endTime);
+    if (!slotValid) {
+      res.status(400).json({ message: "Invalid slot for this date" });
+      return;
+    }
+
+    const totalSeats = await slotInventory.getTotalSeatsFromTableMaster(req);
+    await slotInventory.ensureSlotInventory({
+      req,
+      bookingDate,
+      sectionId,
+      slotStartTime: startTime,
+      slotEndTime: endTime,
+      totalSeats,
+    });
+
+    const allocated = await slotInventory.allocateSeats({
+      req,
+      bookingDate,
+      sectionId,
+      slotStartTime: startTime,
+      slotEndTime: endTime,
+      guestCount,
+    });
+
+    let status: "confirmed" | "pending" = "confirmed";
+    if (!allocated) {
+      const guestDateDoc = await db.read.findOne({
+        req,
+        connectionString,
+        collection: "guest_date",
+        query: GUEST_DATE_QUERY,
+      }) as { allowBookingWhenSlotFull?: boolean } | null;
+      const allowWhenFull = guestDateDoc?.allowBookingWhenSlotFull === true;
+      if (allowWhenFull) {
+        status = "pending";
+      } else {
+        const remaining = await slotInventory.getRemainingSeats(req, bookingDate, sectionId, startTime, endTime);
+        res.status(400).json({
+          message: `Slot is full. Available only for ${remaining} guests.`,
+        });
+        return;
+      }
+    }
+
     const now = new Date();
     const doc = {
       userId: user.id,
@@ -136,11 +191,11 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       sectionName,
       slot: { startTime, endTime },
       guestCount,
-      status: "pending",
+      status,
       coupon: null,
       billing: null,
       payment: {
-        status: "pending",
+        status: null,
         method: null,
         initiatedByStaff: false,
         stripePaymentIntentId: null,
@@ -153,7 +208,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     };
     await db.create.insertOne({
       req,
-      connectionString: db.constants.connectionStrings.tableBooking,
+      connectionString,
       collection: "bookings",
       payload: doc as unknown as Record<string, unknown>,
     });
@@ -161,6 +216,65 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       message: "Booking created",
       data: doc,
     });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/** PATCH /bookings/:id/cancel — cancel a booking. User can only cancel own; only when status is "pending" or "confirmed". */
+export async function cancelBookingHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id || typeof id !== "string" || !ObjectId.isValid(id)) {
+      res.status(400).json({ message: "Invalid booking id" });
+      return;
+    }
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const booking = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "bookings",
+      query: { _id: new ObjectId(id), userId: new ObjectId(userId.toString()) },
+    });
+    if (!booking) {
+      res.status(404).json({ message: "Booking not found" });
+      return;
+    }
+    const currentStatus = (booking as { status?: string }).status;
+    if (currentStatus !== "pending" && currentStatus !== "confirmed") {
+      res.status(400).json({ message: "Only pending or confirmed bookings can be cancelled" });
+      return;
+    }
+    const now = new Date();
+    const b = booking as {
+      bookingDate?: Date;
+      sectionId?: ObjectId;
+      slot?: { startTime?: string; endTime?: string };
+      guestCount?: number;
+    };
+    if (currentStatus === "confirmed" && b.bookingDate && b.sectionId && b.slot?.startTime != null && b.slot?.endTime != null && typeof b.guestCount === "number") {
+      await slotInventory.releaseSeats({
+        req,
+        bookingDate: b.bookingDate,
+        sectionId: b.sectionId,
+        slotStartTime: String(b.slot.startTime),
+        slotEndTime: String(b.slot.endTime),
+        guestCount: b.guestCount,
+      });
+    }
+    await db.update.updateOne({
+      req,
+      connectionString,
+      collection: "bookings",
+      query: { _id: new ObjectId(id), userId: new ObjectId(userId.toString()) },
+      update: { $set: { status: "cancelled", updatedAt: now } },
+    });
+    res.status(200).json({ message: "Booking cancelled", data: { _id: id, status: "cancelled" } });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -196,10 +310,63 @@ export async function getBookingByIdHandler(req: Request, res: Response): Promis
   }
 }
 
-/** Returns guest-dates config and active meal-time sections for the booking flow. */
+/** GET /bookings/slots?bookingDate=YYYY-MM-DD — date-aware slots per section (server-side generation). */
+export async function getSlotsHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const bookingDateStr = typeof req.query.bookingDate === "string" ? req.query.bookingDate.trim() : "";
+    if (!bookingDateStr) {
+      res.status(400).json({ message: "bookingDate query is required (YYYY-MM-DD)" });
+      return;
+    }
+    const bookingDate = new Date(bookingDateStr);
+    if (Number.isNaN(bookingDate.getTime())) {
+      res.status(400).json({ message: "Invalid bookingDate" });
+      return;
+    }
+
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const sections = (await db.read.find({
+      req,
+      connectionString,
+      collection: "meal_time_master",
+      query: { isActive: true },
+      sort: { startTime: 1 },
+    })) as Array<{ _id?: ObjectId; sectionName?: string }>;
+
+    const result: Array<{
+      sectionId: string;
+      sectionName: string;
+      slots: Array<{ startTime: string; endTime: string }>;
+    }> = [];
+
+    for (const sec of sections ?? []) {
+      const id = sec._id;
+      if (!id) continue;
+      const config = await slotConfigService.getSlotConfigForDate(req, id, bookingDate);
+      if (!config) continue;
+      const slots = slotConfigService.generateSlotsFromConfig(config);
+      result.push({
+        sectionId: id.toString(),
+        sectionName: (sec.sectionName as string) ?? "",
+        slots: slots.map((s) => ({ startTime: s.startTime, endTime: s.endTime })),
+      });
+    }
+
+    res.status(200).json({
+      message: "Slots",
+      data: { sections: result },
+    });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/** Returns guest-dates config and active meal-time sections for the booking flow. When bookingDate query is present, returns date-aware slot config per section (data.sections). */
 export async function getBookingConfigHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
+
+    const bookingDateStr = typeof req.query.bookingDate === "string" ? req.query.bookingDate.trim() : "";
 
     const [guestDateDoc, mealTimeList] = await Promise.all([
       db.read.findOne({
@@ -218,11 +385,52 @@ export async function getBookingConfigHandler(req: Request, res: Response): Prom
     ]);
 
     const guestDate = guestDateDoc as { maxGuestCount?: number; maxDaysCount?: number } | null;
-    const sections = (mealTimeList ?? []) as Array<Record<string, unknown>>;
-
     const maxGuestCount = guestDate?.maxGuestCount ?? 30;
     const maxDaysCount = guestDate?.maxDaysCount ?? 30;
 
+    if (bookingDateStr) {
+      const bookingDate = new Date(bookingDateStr);
+      if (Number.isNaN(bookingDate.getTime())) {
+        res.status(400).json({ message: "Invalid bookingDate" });
+        return;
+      }
+      const sectionsList = (mealTimeList ?? []) as Array<{ _id?: unknown; sectionName?: string }>;
+      const sections: Array<{
+        sectionId: string;
+        sectionName: string;
+        startTime: string;
+        endTime: string;
+        slotDuration: number;
+        slotDurationType?: string;
+        effectiveFrom?: string;
+      }> = [];
+      for (const sec of sectionsList) {
+        const id = sec._id;
+        if (!id) continue;
+        const sectionId = id instanceof ObjectId ? id : new ObjectId(String(id));
+        const config = await slotConfigService.getSlotConfigForDate(req, sectionId, bookingDate);
+        if (!config) continue;
+        sections.push({
+          sectionId: sectionId.toString(),
+          sectionName: (sec.sectionName as string) ?? "",
+          startTime: config.startTime,
+          endTime: config.endTime,
+          slotDuration: config.slotDuration,
+          slotDurationType: config.slotDurationType ?? "minutes",
+          effectiveFrom: config.effectiveFrom,
+        });
+      }
+      res.status(200).json({
+        message: "Booking config",
+        data: {
+          guestDates: { maxGuestCount, maxDaysCount },
+          sections,
+        },
+      });
+      return;
+    }
+
+    const sections = (mealTimeList ?? []) as Array<Record<string, unknown>>;
     res.status(200).json({
       message: "Booking config",
       data: {

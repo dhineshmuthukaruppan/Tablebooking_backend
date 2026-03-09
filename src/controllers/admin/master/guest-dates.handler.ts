@@ -13,14 +13,15 @@ export async function getGuestDatesConfigHandler(req: Request, res: Response): P
       connectionString,
       collection: "guest_date",
       query: CONFIG_QUERY,
-    }) as { maxGuestCount?: number; maxDaysCount?: number } | null;
+    }) as { maxGuestCount?: number; maxDaysCount?: number; allowBookingWhenSlotFull?: boolean } | null;
 
     const maxGuestCount = doc?.maxGuestCount ?? 0;
     const maxDaysCount = doc?.maxDaysCount ?? 0;
+    const allowBookingWhenSlotFull = doc?.allowBookingWhenSlotFull ?? false;
 
     res.status(200).json({
       message: "Guest and dates config",
-      data: { maxGuestCount, maxDaysCount },
+      data: { maxGuestCount, maxDaysCount, allowBookingWhenSlotFull },
     });
   } catch {
     res.status(500).json({ message: "Internal server error" });
@@ -29,12 +30,14 @@ export async function getGuestDatesConfigHandler(req: Request, res: Response): P
 
 export async function updateGuestDatesConfigHandler(req: Request, res: Response): Promise<void> {
   try {
-    const body = req.body as { maxGuestCount?: number; maxDaysCount?: number };
+    const body = req.body as { maxGuestCount?: number; maxDaysCount?: number; allowBookingWhenSlotFull?: boolean };
     const maxGuestCount = typeof body.maxGuestCount === "number" ? body.maxGuestCount : undefined;
     const maxDaysCount = typeof body.maxDaysCount === "number" ? body.maxDaysCount : undefined;
+    const allowBookingWhenSlotFull =
+      typeof body.allowBookingWhenSlotFull === "boolean" ? body.allowBookingWhenSlotFull : undefined;
 
-    if (maxGuestCount === undefined && maxDaysCount === undefined) {
-      res.status(400).json({ message: "Provide maxGuestCount and/or maxDaysCount" });
+    if (maxGuestCount === undefined && maxDaysCount === undefined && allowBookingWhenSlotFull === undefined) {
+      res.status(400).json({ message: "Provide maxGuestCount, maxDaysCount and/or allowBookingWhenSlotFull" });
       return;
     }
 
@@ -43,6 +46,7 @@ export async function updateGuestDatesConfigHandler(req: Request, res: Response)
     const updateFields: Record<string, unknown> = { updatedAt: now };
     if (maxGuestCount !== undefined) updateFields.maxGuestCount = maxGuestCount;
     if (maxDaysCount !== undefined) updateFields.maxDaysCount = maxDaysCount;
+    if (allowBookingWhenSlotFull !== undefined) updateFields.allowBookingWhenSlotFull = allowBookingWhenSlotFull;
 
     const existing = await db.read.findOne({
       req,
@@ -60,6 +64,7 @@ export async function updateGuestDatesConfigHandler(req: Request, res: Response)
           type: "default",
           maxGuestCount: maxGuestCount ?? 0,
           maxDaysCount: maxDaysCount ?? 0,
+          allowBookingWhenSlotFull: allowBookingWhenSlotFull ?? false,
           updatedAt: now,
         },
       });
@@ -78,13 +83,14 @@ export async function updateGuestDatesConfigHandler(req: Request, res: Response)
       connectionString,
       collection: "guest_date",
       query: CONFIG_QUERY,
-    }) as { maxGuestCount?: number; maxDaysCount?: number } | null;
+    }) as { maxGuestCount?: number; maxDaysCount?: number; allowBookingWhenSlotFull?: boolean } | null;
 
     res.status(200).json({
       message: "Guest and dates config updated",
       data: {
         maxGuestCount: doc?.maxGuestCount ?? 0,
         maxDaysCount: doc?.maxDaysCount ?? 0,
+        allowBookingWhenSlotFull: doc?.allowBookingWhenSlotFull ?? false,
       },
     });
   } catch {

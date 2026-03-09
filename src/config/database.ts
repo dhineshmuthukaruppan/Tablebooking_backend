@@ -1,7 +1,7 @@
 import { MongoClient } from "mongodb";
 import { env } from "./env";
 import { logger } from "./logger";
-import { ensureUsersIndexes } from "../lib/db/collections";
+import { ensureAllIndexes } from "../lib/db/collections";
 
 let client: MongoClient | null = null;
 let db: import("mongodb").Db | null = null;
@@ -11,7 +11,7 @@ export async function connectDatabase(): Promise<void> {
   await c.connect();
   client = c;
   db = client.db();
-  await ensureUsersIndexes(db);
+  await ensureAllIndexes(db);
   logger.info("MongoDB connected");
 }
 

@@ -13,3 +13,7 @@ export {
   getTableMasterConfigHandler,
   putTableMasterConfigHandler,
 } from "./table-master.handler";
+export {
+  previewSlotConfigHandler,
+  createSlotConfigHandler,
+} from "./slot-config.handler";

@@ -9,6 +9,7 @@ export const dbTables = {
   table_master: "table_master",
   bookings: "bookings",
   feedbacks: "feedbacks",
+  slot_inventory: "slot_inventory",
 } as const;
 
 export const connectionStrings = {

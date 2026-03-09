@@ -82,12 +82,14 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
       createdAt: now,
       updatedAt: now,
     };
-    await db.create.insertOne({
+    const insertResult = await db.create.insertOne({
       req,
       connectionString,
       collection: "feedbacks",
       payload: feedbackDoc as unknown as Record<string, unknown>,
     });
+
+    const insertedFeedbackId = insertResult?.insertedId;
 
     await db.update.updateOne({
       req,
@@ -97,6 +99,7 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
       update: {
         $set: {
           feedback: {
+            _id: insertedFeedbackId,
             rating: overallRating,
             comment: description ?? "",
             submittedAt: now,

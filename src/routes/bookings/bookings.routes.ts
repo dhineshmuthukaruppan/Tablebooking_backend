@@ -10,6 +10,8 @@ const router = Router();
 
 router.get("/", auth.authentication.authenticate, bookingsController.listBookingsHandler);
 router.get("/config", auth.authentication.authenticate, bookingsController.getBookingConfigHandler);
+router.get("/slots", auth.authentication.authenticate, bookingsController.getSlotsHandler);
+router.patch("/:id/cancel", auth.authentication.authenticate, bookingsController.cancelBookingHandler);
 router.get("/:id", auth.authentication.authenticate, bookingsController.getBookingByIdHandler);
 router.post("/", auth.authentication.authenticate, bookingsController.createBookingHandler);
 
