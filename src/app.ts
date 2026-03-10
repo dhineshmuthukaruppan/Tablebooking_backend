@@ -12,7 +12,7 @@ const app = express();
 
 // CORS: allow frontend origin so browser preflight (OPTIONS) and actual requests succeed
 const allowedOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
-if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:3000");
+if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:3000", "http://127.0.0.1:3000");
 
 app.use(
   cors({
