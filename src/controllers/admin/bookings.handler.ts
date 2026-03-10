@@ -18,7 +18,7 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       res.status(401).json({ message: "Unauthorized" });
       return;
     }
-    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId(staff.id.toString());
+    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId(String(staff.id));
     const body = req.body as {
       status?: string;
       billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
@@ -107,7 +107,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
       res.status(401).json({ message: "Unauthorized" });
       return;
     }
-    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId(staff.id.toString());
+    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId(String(staff.id));
     const body = req.body as {
       billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
       payment?: { status?: "pending" | "paid"; method?: "stripe" | "cash" | "card" };
