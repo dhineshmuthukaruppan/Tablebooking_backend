@@ -1,5 +1,5 @@
 /**
- * Admin routes – dashboard, users (list, update), master (guest-dates, meal-time).
+ * Admin routes – dashboard, users (list, update), master (guest-dates, meal-time), bookings (patch).
  * RBAC: dashboard requires admin or staff; users list/patch require admin.
  */
 import { Router } from "express";
@@ -8,6 +8,13 @@ import * as adminController from "../../controllers/admin";
 import { masterRoutes } from "./master";
 
 const router = Router();
+
+router.patch(
+  "/bookings/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.patchBookingByAdminHandler
+);
 
 router.get(
   "/dashboard",

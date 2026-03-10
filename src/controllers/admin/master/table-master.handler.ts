@@ -42,6 +42,19 @@ function normalizeSections(sections: TableMasterSection[]): TableMasterSection[]
   }));
 }
 
+/** Sum of all table seats across sections. Uses numeric seats only (handles number or string from DB). */
+function computeTotalSeats(sections: TableMasterSection[]): number {
+  let total = 0;
+  for (const sec of sections) {
+    for (const t of sec.tables || []) {
+      const s = (t as { seats?: number | string | null }).seats;
+      const n = typeof s === "number" && !Number.isNaN(s) ? s : Number(s);
+      if (Number.isFinite(n) && n >= 0) total += n;
+    }
+  }
+  return total;
+}
+
 export async function getTableMasterConfigHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
@@ -52,7 +65,9 @@ export async function getTableMasterConfigHandler(req: Request, res: Response): 
       query: { _id: CONFIG_ID },
     });
     const sections = (doc as { sections?: TableMasterSection[] } | null)?.sections ?? [];
-    res.status(200).json({ message: "Table master config", data: sections });
+    const docTotal = (doc as { total_seats?: number } | null)?.total_seats;
+    const totalSeats = typeof docTotal === "number" ? docTotal : computeTotalSeats(sections);
+    res.status(200).json({ message: "Table master config", data: { sections, totalSeats } });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -66,16 +81,20 @@ export async function putTableMasterConfigHandler(req: Request, res: Response): 
       return;
     }
     const sections = normalizeSections(body.sections as TableMasterSection[]);
+    const totalSeats = computeTotalSeats(sections);
     const connectionString = db.constants.connectionStrings.tableBooking;
     await db.update.findOneAndUpdate({
       req,
       connectionString,
       collection: "table_master",
       query: { _id: CONFIG_ID },
-      update: { $set: { sections } },
+      update: {
+        $set: { sections, total_seats: totalSeats },
+        $unset: { totalSeats: "", available_seats: "" },
+      },
       options: { upsert: true },
     });
-    res.status(200).json({ message: "Table master config saved", data: sections });
+    res.status(200).json({ message: "Table master config saved", data: { sections, totalSeats } });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
