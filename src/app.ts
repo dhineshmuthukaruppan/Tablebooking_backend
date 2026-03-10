@@ -11,13 +11,23 @@ import { apiRouter } from "./routes/api.routes";
 const app = express();
 
 // CORS: allow frontend origin so browser preflight (OPTIONS) and actual requests succeed
-const allowedOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
-if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:3000");
+// CORS_ORIGIN can be a comma-separated list of exact origins, e.g.:
+// "https://tablebooking-ui-dev-....run.app,http://localhost:3000"
+const allowedOrigins = new Set(
+  env.CORS_ORIGIN.split(",")
+    .map((o) => o.trim())
+    .filter(Boolean)
+);
+if (allowedOrigins.size === 0) {
+  allowedOrigins.add("http://localhost:3000");
+}
 
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      // Allow non-browser / same-origin requests
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.has(origin)) return cb(null, true);
       return cb(null, false);
     },
     credentials: true,
