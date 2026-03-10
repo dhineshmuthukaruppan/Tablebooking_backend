@@ -52,7 +52,7 @@ steps:
       - '--timeout'
       - '300'
       - '--set-env-vars'
-      - 'NODE_ENV=production,PORT=8080,CORS_ORIGIN=${_CORS_ORIGIN},RATE_LIMIT_WINDOW_MS=900000,RATE_LIMIT_MAX_REQUESTS=200'
+      - 'NODE_ENV=production,CORS_ORIGIN=${_CORS_ORIGIN},RATE_LIMIT_WINDOW_MS=900000,RATE_LIMIT_MAX_REQUESTS=200'
       # Sensitive values: use Secret Manager, mapped to the same env names as in .env.local
       - '--set-secrets'
       - 'MONGODB_URI=${_MONGODB_URI_SECRET}:latest,FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID_SECRET}:latest,FIREBASE_CLIENT_EMAIL=${_FIREBASE_CLIENT_EMAIL_SECRET}:latest,FIREBASE_PRIVATE_KEY=${_FIREBASE_PRIVATE_KEY_SECRET}:latest'
