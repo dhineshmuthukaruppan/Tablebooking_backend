@@ -141,5 +141,13 @@ export function generateSlotsFromConfig(config: SlotConfigForDate): SlotRange[] 
       endTime: minutesToTime(t + duration),
     });
   }
+  // Include trailing partial slot when remaining time is less than full duration (e.g. section ends 12:25, last start 12:00, duration 30 → add 12:00–12:25)
+  const lastEnd = slots.length > 0 ? timeToMinutes(slots[slots.length - 1].endTime) : startMin;
+  if (lastEnd < endMin) {
+    slots.push({
+      startTime: minutesToTime(lastEnd),
+      endTime: minutesToTime(endMin),
+    });
+  }
   return slots;
 }

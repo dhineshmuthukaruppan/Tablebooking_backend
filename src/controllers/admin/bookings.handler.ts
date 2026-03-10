@@ -18,7 +18,7 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       res.status(401).json({ message: "Unauthorized" });
       return;
     }
-    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId(staff.id.toString());
+    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId((staff.id as string).toString());
     const body = req.body as {
       status?: string;
       billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
@@ -43,6 +43,9 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
         return;
       }
       updates.status = body.status;
+      updates.payment = {
+        status: body.status === "completed" ? "pending" : null,
+      };
     }
 
     if (body.billing !== undefined) {
