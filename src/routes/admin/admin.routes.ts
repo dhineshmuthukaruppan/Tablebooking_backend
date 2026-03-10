@@ -46,6 +46,20 @@ router.patch(
 
 router.use("/master", masterRoutes);
 
+router.get(
+  "/feedback",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.getAdminFeedbackHandler
+);
+
+router.patch(
+  "/feedback/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.patchAdminFeedbackHandler
+);
+
 router.post(
   "/jobs/cleanup-slot-inventory",
   auth.authentication.authenticate,
