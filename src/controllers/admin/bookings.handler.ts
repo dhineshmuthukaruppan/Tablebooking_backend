@@ -94,3 +94,71 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
     res.status(500).json({ message: "Internal server error" });
   }
 }
+
+const WALK_IN_OFFLINE_USER = "Offline user";
+
+/**
+ * POST /admin/bookings/walk-in — create a minimal booking for walk-in/offline user payment (no prior booking).
+ */
+export async function postWalkInPaymentHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const staff = req.user;
+    if (!staff?.id) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId(staff.id.toString());
+    const body = req.body as {
+      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
+      payment?: { status?: "pending" | "paid"; method?: "stripe" | "cash" | "card" };
+      feedbackRequired?: boolean;
+    };
+    const actual = Number(body.billing?.actualAmount ?? 0);
+    const discount = Number(body.billing?.discountAmount ?? 0);
+    const finalAmount =
+      typeof body.billing?.finalAmount === "number"
+        ? body.billing.finalAmount
+        : Math.max(0, (Number.isFinite(actual) ? actual : 0) - (Number.isFinite(discount) ? discount : 0));
+    const method = body.payment?.method ?? "cash";
+    const isOffline = method === "cash" || method === "card";
+    const now = new Date();
+    const doc = {
+      userId: null,
+      customerName: WALK_IN_OFFLINE_USER,
+      customerPhone: undefined,
+      customerEmail: undefined,
+      bookingDate: now,
+      sectionId: null,
+      sectionName: "Walk-in",
+      slot: { startTime: "", endTime: "" },
+      guestCount: 0,
+      status: "completed",
+      coupon: null,
+      billing: {
+        actualAmount: Number.isFinite(actual) ? actual : 0,
+        discountAmount: Number.isFinite(discount) ? discount : 0,
+        finalAmount: Math.max(0, finalAmount),
+      },
+      payment: {
+        status: isOffline ? "paid" : (body.payment?.status ?? "pending"),
+        method: method ?? null,
+        initiatedByStaff: staffId,
+        stripePaymentIntentId: null,
+        paidAt: isOffline ? now : null,
+      },
+      feedbackRequired: !!body.feedbackRequired,
+      feedback: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.create.insertOne({
+      req,
+      connectionString: db.constants.connectionStrings.tableBooking,
+      collection: "bookings",
+      payload: doc as unknown as Record<string, unknown>,
+    });
+    res.status(201).json({ message: "Walk-in payment recorded" });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}

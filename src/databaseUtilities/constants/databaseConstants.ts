@@ -9,6 +9,7 @@ export const dbTables = {
   table_master: "table_master",
   bookings: "bookings",
   feedbacks: "feedbacks",
+  venue_config: "venue_config",
 } as const;
 
 export const connectionStrings = {

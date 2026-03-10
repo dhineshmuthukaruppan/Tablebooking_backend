@@ -66,7 +66,8 @@ controllers/
 ## 3. Routes Structure
 
 - **Domain route files**: `src/routes/<domain>/<domain>.routes.ts` (e.g. `auth/auth.routes.ts`, `bookings/bookings.routes.ts`) — builds the Express router for that domain. Do not use `index.ts` inside domain folders so the only index is the main aggregator.
-- **Aggregator**: `src/routes/index.ts` — the only index in routes; imports from each domain’s `*.routes.ts` and mounts them on the v1 router.
+- **V1 aggregator**: `src/routes/index.ts` — imports from each domain’s `*.routes.ts` and builds the v1 router (no mount path; it is mounted by the API aggregator).
+- **API version aggregator**: `src/routes/api.routes.ts` — mounts versioned routers under `/v1`, `/v2`, etc. All version logic lives here.
 
 **Route file pattern:**
 
@@ -82,13 +83,25 @@ controllers/
 
 ## 4. App / Server – Route Mounting
 
-- Load routes from `./routes` (v1Router).
-- Mount once: `app.use("/api/v1", v1Router)`.
+- Load the API aggregator from `./routes/api.routes` (apiRouter).
+- Mount once: `app.use("/api", apiRouter)`. All versions live under `/api` (e.g. `/api/v1/health`, `/api/v2/health`).
 - Apply global middleware (cors, helmet, rate limit, etc.) in `app.ts` before the router.
+- Do **not** register versioned routes directly on `app` (e.g. no `app.get("/api/v1/...")`); all go through the versioned routers.
 
 ---
 
-## 5. What Not to Do
+## 5. API Versioning
+
+- **Strategy**: Path-based versioning. All versions are under `/api/<version>` (e.g. `/api/v1`, `/api/v2`).
+- **Version registry**: `src/config/api-versions.ts` — lists supported versions, default version, and optional deprecation (sunset date, successor link). Use this when adding or deprecating versions.
+- **Adding a new version**: (1) Create a new router (e.g. `v2Router` in a new file or under `routes/`). (2) Register it in `src/routes/api.routes.ts`: `apiRouter.use("/v2", versionHeadersMiddleware("v2"), v2Router)`. (3) Add the version to `src/config/api-versions.ts` in `API_VERSIONS`.
+- **Table-master and other routes**: Live only inside the versioned router tree (e.g. v1Router or admin/master routes). Not on `app` directly.
+- **Deprecation**: Mark a version as deprecated in `api-versions.ts` (`deprecated: true`, optional `sunsetDate`, `linkSuccessor`). The API router middleware sets `X-API-Version`, and for deprecated versions sets `Deprecation: true`, `Sunset`, and `Link` headers.
+- **Health**: Versioned health at `GET /api/v1/health`. Optional version-agnostic health at `GET /api/health`.
+
+---
+
+## 6. What Not to Do
 
 - **Do not** add a top-level **modules** directory.
 - **Do not** have routes or app depend on “modules”; they depend only on:
@@ -98,10 +111,10 @@ controllers/
 
 ---
 
-## 6. Checklist for New Features
+## 7. Checklist for New Features
 
 - [ ] No `modules/` layer; use **controllers/<domain>/** and **routes/<domain>/** only.
-- [ ] One **routes/index.ts** that imports domain routers and mounts them under the v1 router.
+- [ ] **routes/index.ts** builds the v1 router; **routes/api.routes.ts** mounts v1 (and future versions) under `/api`.
 - [ ] New domain = new folder under `controllers/` and under `routes/` with handler and route files.
 - [ ] Controllers use async handlers and use **config**, **lib**, **services** as needed.
 - [ ] All MongoDB operations go through **databaseUtilities** (`db.read`, `db.create`, `db.update`, `db.constants`).

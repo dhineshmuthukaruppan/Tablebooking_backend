@@ -16,6 +16,13 @@ router.patch(
   adminController.patchBookingByAdminHandler
 );
 
+router.post(
+  "/bookings/walk-in",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.postWalkInPaymentHandler
+);
+
 router.get(
   "/dashboard",
   auth.authentication.authenticate,

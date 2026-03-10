@@ -13,3 +13,11 @@ export {
   getTableMasterConfigHandler,
   putTableMasterConfigHandler,
 } from "./table-master.handler";
+export {
+  getLocationTimingHandler,
+  putLocationTimingHandler,
+} from "./location-timing.handler";
+export {
+  getFacilitiesHandler,
+  putFacilitiesHandler,
+} from "./facilities.handler";
