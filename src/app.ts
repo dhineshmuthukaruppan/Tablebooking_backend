@@ -6,14 +6,24 @@ import morgan from "morgan";
 import { env } from "./config/env";
 import { errorHandler } from "./middlewares/error.middleware";
 import { notFoundHandler } from "./middlewares/not-found.middleware";
-import { v1Router } from "./routes";
+import { apiRouter } from "./routes/api.routes";
 
 const app = express();
 
+// CORS: allow frontend origin so browser preflight (OPTIONS) and actual requests succeed
+const allowedOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
+if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:3000", "http://127.0.0.1:3000");
+
 app.use(
   cors({
-    origin: env.CORS_ORIGIN,
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 204,
   })
 );
 app.use(helmet());
@@ -29,7 +39,16 @@ app.use(
   })
 );
 
-app.use("/api/v1", v1Router);
+// Version-agnostic health (optional). Versioned health: GET /api/v1/health
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "table-booking-backend",
+    time: new Date().toISOString(),
+  });
+});
+
+app.use("/api", apiRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 

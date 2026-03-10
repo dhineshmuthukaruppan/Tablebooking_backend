@@ -6,7 +6,7 @@ Backend foundation for **The Sheesha Factory** using:
 - MongoDB (native driver; see [docs/schema.md](docs/schema.md) for document shapes and indexes)
 - Firebase Admin SDK (JWT verification)
 - RBAC middleware scaffold
-- API versioning with `/api/v1`
+- API versioning via path: `/api/v1`, `/api/v2` (see [BACKEND_STRUCTURE_GUIDE.md](BACKEND_STRUCTURE_GUIDE.md) for adding or deprecating versions)
 
 ## Git & branching
 
@@ -49,9 +49,11 @@ See `.env.example` for all variables. Key differences per environment: `MONGODB_
   - Add Loki as a data source in Grafana at `http://localhost:3002` (default login `admin` / `admin`): URL `http://loki:3100`.
   - To ship backend logs: redirect stdout to a file (e.g. `npm run dev 2>&1 | tee /var/log/tablebooking-backend.log`) and point Promtail at that path, or use a log driver that forwards to Loki.
 
-## API Base
+## API Base and versioning
 
-- `http://localhost:5000/api/v1`
+- The API is versioned by path: `http://localhost:5000/api/v1`, `http://localhost:5000/api/v2`, etc.
+- Clients (including the frontend) choose the version by setting the base URL (e.g. `NEXT_PUBLIC_API_BASE_URL` in the frontend).
+- To add or deprecate a version, see the **API versioning** section in [BACKEND_STRUCTURE_GUIDE.md](BACKEND_STRUCTURE_GUIDE.md).
 
 ## RBAC
 
@@ -60,17 +62,17 @@ See `.env.example` for all variables. Key differences per environment: `MONGODB_
 
 ## Scaffolded Endpoints
 
-- `GET /health`
-- `GET /auth/me` (requires Firebase bearer token)
-- `GET /bookings` (requires auth)
-- `GET /coupons`
-- `POST /coupons/redeem` (requires auth)
-- `GET /feedback`
-- `POST /feedback` (requires auth)
-- `GET /videos`
-- `POST /videos` (admin/staff only)
-- `GET /admin/dashboard` (admin/staff only)
-- `GET /admin/users` (admin only; paginated, filters: role, isEmailVerified, isEligibleForCoupons)
-- `PATCH /admin/users/:id` (admin only; body: role, isEligibleForCoupons)
+- `GET /api/health` (version-agnostic), `GET /api/v1/health` (versioned)
+- `GET /api/v1/auth/me` (requires Firebase bearer token)
+- `GET /api/v1/bookings` (requires auth)
+- `GET /api/v1/coupons`
+- `POST /api/v1/coupons/redeem` (requires auth)
+- `GET /api/v1/feedback`
+- `POST /api/v1/feedback` (requires auth)
+- `GET /api/v1/videos`
+- `POST /api/v1/videos` (admin/staff only)
+- `GET /api/v1/admin/dashboard` (admin/staff only)
+- `GET /api/v1/admin/users` (admin only; paginated, filters: role, isEmailVerified, isEligibleForCoupons)
+- `PATCH /api/v1/admin/users/:id` (admin only; body: role, isEligibleForCoupons)
 
 **Postman:** Import `postman/Auth-and-Verification.json` for auth and admin user endpoints. Set collection variables `baseUrl` (e.g. `http://localhost:5000/api/v1`) and `bearerToken` (Firebase ID token from the client after login).

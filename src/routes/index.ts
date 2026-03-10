@@ -1,27 +1,46 @@
+/**
+ * V1 route aggregator. Imports domain route folders for API version 1.
+ * Mounted under /api/v1 by the api route aggregator (api.routes.ts).
+ * See BACKEND_STRUCTURE_GUIDE.md. No src/modules layer.
+ */
 import { Router } from "express";
-import { adminRouter } from "../modules/admin/admin.routes";
-import { authRouter } from "../modules/auth/auth.routes";
-import { bookingsRouter } from "../modules/bookings/bookings.routes";
-import { couponsRouter } from "../modules/coupons/coupons.routes";
-import { feedbackRouter } from "../modules/feedback/feedback.routes";
-import { videosRouter } from "../modules/videos/videos.routes";
+import * as venueController from "../controllers/venue.handler";
+import { authRoutes } from "./auth/auth.routes";
+import { userRegistrationRoutes } from "./user_registration/user_registration.routes";
+import { adminRoutes } from "./admin/admin.routes";
+import { bookingsRoutes } from "./bookings/bookings.routes";
+import { couponsRoutes } from "./coupons/coupons.routes";
+import { feedbackRoutes } from "./feedback/feedback.routes";
+import { videosRoutes } from "./videos/videos.routes";
 
 const v1Router = Router();
+
+// Public: venue config for landing page (location, timing, facilities)
+v1Router.get("/venue/config", venueController.getVenueConfigHandler);
 
 v1Router.get("/health", (_req, res) => {
   res.status(200).json({
     status: "ok",
     service: "table-booking-backend",
     version: "v1",
+    routesRevision: "table-master-2024", // change this after fixing table-master to confirm restart
     time: new Date().toISOString(),
   });
 });
 
-v1Router.use("/auth", authRouter);
-v1Router.use("/bookings", bookingsRouter);
-v1Router.use("/coupons", couponsRouter);
-v1Router.use("/feedback", feedbackRouter);
-v1Router.use("/videos", videosRouter);
-v1Router.use("/admin", adminRouter);
+// Auth: signin + me; user_registration: register (both under /auth)
+v1Router.use("/auth", userRegistrationRoutes);
+v1Router.use("/auth", authRoutes);
+
+// Table master: served via admin/master/table-master.routes. Ping for route confirmation.
+v1Router.get("/admin/master/table-master-ping", (_req, res) =>
+  res.status(200).json({ tableMasterRoute: "registered" })
+);
+
+v1Router.use("/admin", adminRoutes);
+v1Router.use("/bookings", bookingsRoutes);
+v1Router.use("/coupons", couponsRoutes);
+v1Router.use("/feedback", feedbackRoutes);
+v1Router.use("/videos", videosRoutes);
 
 export { v1Router };
