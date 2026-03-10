@@ -110,7 +110,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
       res.status(401).json({ message: "Unauthorized" });
       return;
     }
-    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId(staff.id.toString());
+    const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId((staff.id as string).toString());
     const body = req.body as {
       billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
       payment?: { status?: "pending" | "paid"; method?: "stripe" | "cash" | "card" };
