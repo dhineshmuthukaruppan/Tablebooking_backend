@@ -4,17 +4,15 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import morgan from "morgan";
 import { env } from "./config/env";
-import * as tableMasterHandler from "./controllers/admin/master/table-master.handler";
 import { errorHandler } from "./middlewares/error.middleware";
 import { notFoundHandler } from "./middlewares/not-found.middleware";
-import { v1Router } from "./routes";
-import { auth } from "./services";
+import { apiRouter } from "./routes/api.routes";
 
 const app = express();
 
 // CORS: allow frontend origin so browser preflight (OPTIONS) and actual requests succeed
 const allowedOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
-if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:3000");
+if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:3000", "http://127.0.0.1:3000");
 
 app.use(
   cors({
@@ -41,15 +39,16 @@ app.use(
   })
 );
 
-// Table master: register before v1Router so this path is handled here
-const tableMasterAuth = [auth.authentication.authenticate, auth.privilege.requireRoles("admin", "staff")];
-app.get("/api/v1/admin/master/table-master", ...tableMasterAuth, tableMasterHandler.getTableMasterConfigHandler);
-app.put("/api/v1/admin/master/table-master", ...tableMasterAuth, tableMasterHandler.putTableMasterConfigHandler);
-// Ping to confirm this code is running: open http://localhost:5001/api/v1/admin/master/table-master-ping (should return {"tableMasterRoute":"registered"})
-app.get("/api/v1/admin/master/table-master-ping", (_req, res) => res.status(200).json({ tableMasterRoute: "registered" }));
-console.log("[app] Table master: GET/PUT /api/v1/admin/master/table-master + ping at .../table-master-ping");
+// Version-agnostic health (optional). Versioned health: GET /api/v1/health
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "table-booking-backend",
+    time: new Date().toISOString(),
+  });
+});
 
-app.use("/api/v1", v1Router);
+app.use("/api", apiRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 

@@ -1,10 +1,10 @@
 /**
- * Main route aggregator. Imports domain route folders and mounts under /api/v1.
+ * V1 route aggregator. Imports domain route folders for API version 1.
+ * Mounted under /api/v1 by the api route aggregator (api.routes.ts).
  * See BACKEND_STRUCTURE_GUIDE.md. No src/modules layer.
  */
 import { Router } from "express";
-import { auth } from "../services";
-import * as tableMasterController from "../controllers/admin/master/table-master.handler";
+import * as venueController from "../controllers/venue.handler";
 import { authRoutes } from "./auth/auth.routes";
 import { userRegistrationRoutes } from "./user_registration/user_registration.routes";
 import { adminRoutes } from "./admin/admin.routes";
@@ -14,6 +14,9 @@ import { feedbackRoutes } from "./feedback/feedback.routes";
 import { videosRoutes } from "./videos/videos.routes";
 
 const v1Router = Router();
+
+// Public: venue config for landing page (location, timing, facilities)
+v1Router.get("/venue/config", venueController.getVenueConfigHandler);
 
 v1Router.get("/health", (_req, res) => {
   res.status(200).json({
@@ -29,18 +32,9 @@ v1Router.get("/health", (_req, res) => {
 v1Router.use("/auth", userRegistrationRoutes);
 v1Router.use("/auth", authRoutes);
 
-// Table master: register as direct GET/PUT so path matching is unambiguous (no nested router)
-v1Router.get(
-  "/admin/master/table-master",
-  auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin", "staff"),
-  tableMasterController.getTableMasterConfigHandler
-);
-v1Router.put(
-  "/admin/master/table-master",
-  auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin", "staff"),
-  tableMasterController.putTableMasterConfigHandler
+// Table master: served via admin/master/table-master.routes. Ping for route confirmation.
+v1Router.get("/admin/master/table-master-ping", (_req, res) =>
+  res.status(200).json({ tableMasterRoute: "registered" })
 );
 
 v1Router.use("/admin", adminRoutes);

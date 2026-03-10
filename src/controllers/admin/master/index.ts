@@ -14,6 +14,14 @@ export {
   putTableMasterConfigHandler,
 } from "./table-master.handler";
 export {
+  getLocationTimingHandler,
+  putLocationTimingHandler,
+} from "./location-timing.handler";
+export {
+  getFacilitiesHandler,
+  putFacilitiesHandler,
+} from "./facilities.handler";
+export {
   previewSlotConfigHandler,
   createSlotConfigHandler,
 } from "./slot-config.handler";
