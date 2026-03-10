@@ -16,6 +16,49 @@ function getTodayRange(): { start: Date; end: Date } {
   return { start, end };
 }
 
+/** Start of (today - daysOffset) 00:00:00 UTC, end of today 23:59:59.999 UTC */
+function getWindowEndOfToday(daysOffset: number): { start: Date; end: Date } {
+  const now = new Date();
+  const iso = now.toISOString().slice(0, 10);
+  const startOfToday = new Date(iso + "T00:00:00.000Z");
+  const start = new Date(startOfToday);
+  start.setUTCDate(start.getUTCDate() - daysOffset);
+  const end = new Date(startOfToday);
+  end.setUTCDate(end.getUTCDate() + 1);
+  end.setUTCMilliseconds(-1);
+  return { start, end };
+}
+
+/** GET /bookings/feedback-pending — bookings in last 4 days (today-4 start to today end), status completed, feedbackRequired true, feedback null. For current user. */
+export async function getFeedbackPendingBookingsHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const { start, end } = getWindowEndOfToday(4);
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const list = await db.read.find({
+      req,
+      connectionString,
+      collection: "bookings",
+      query: {
+        userId: new ObjectId(userId.toString()),
+        bookingDate: { $gte: start, $lte: end },
+        status: "completed",
+        feedbackRequired: true,
+        $or: [{ feedback: null }, { feedback: { $exists: false } }],
+      },
+      sort: { bookingDate: -1 },
+      limit: 10,
+    });
+    res.status(200).json({ message: "Feedback pending bookings", data: list ?? [] });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 /** GET /bookings — query: customerId (optional), tab=upcoming|past (optional), page (1-based), limit. Server-side pagination. */
 export async function listBookingsHandler(req: Request, res: Response): Promise<void> {
   try {

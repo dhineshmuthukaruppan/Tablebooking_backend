@@ -1,11 +1,11 @@
 {
   "info": {
     "name": "Auth & Verification",
-    "description": "Table Booking Backend – Auth and admin user endpoints. Set `baseUrl` (e.g. http://localhost:5000/api/v1) and `bearerToken` (Firebase ID token from client after login).",
+    "description": "Table Booking Backend – Auth and admin user endpoints. Set `baseUrl` (e.g. http://localhost:5001/api/v1) and `bearerToken` (Firebase ID token from client after login).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:5000/api/v1" },
+    { "key": "baseUrl", "value": "http://localhost:5001/api/v1" },
     { "key": "bearerToken", "value": "" }
   ],
   "item": [

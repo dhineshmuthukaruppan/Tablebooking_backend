@@ -1,6 +1,7 @@
 export {
   listBookingsHandler,
   createBookingHandler,
+  getFeedbackPendingBookingsHandler,
   getBookingByIdHandler,
   getBookingConfigHandler,
   getSlotsHandler,
