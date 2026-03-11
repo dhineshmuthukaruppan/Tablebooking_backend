@@ -58,19 +58,19 @@ Locally, you may point `GCS_FILE_UPLOAD_CONFIG` to a JSON file path (for example
 
 Instead, store the JSON in **Secret Manager** and mount it into the container filesystem as a file.
 
-### How `--update-secrets` works (and how the code uses it)
+### How secret mounting works (and how the code uses it)
 
 Cloud Run supports secrets in two forms:
 
 - **Secret as env var**: Cloud Run reads the secret value at instance startup and places it into `process.env.<NAME>`.
 - **Secret as file (volume mount)**: Cloud Run exposes the secret value as a **file at a container path**. Your code reads the file from the filesystem.
 
-With `gcloud run deploy`, the flag `--update-secrets` can do **either**, depending on what you put on the left-hand side:
+With `gcloud run deploy`, the secret flags (`--set-secrets` or `--update-secrets`) can do **either**, depending on what you put on the left-hand side:
 
 - If the left side looks like an env var name, it's injected as an env var:
-  - `--update-secrets=FIREBASE_PRIVATE_KEY=my-secret:latest`
+  - `--set-secrets=FIREBASE_PRIVATE_KEY=my-secret:latest`
 - If the left side starts with a `/`, Cloud Run mounts a file at that path:
-  - `--update-secrets=/secrets/gcs-credentials.json=my-gcs-secret:latest`
+  - `--set-secrets=/secrets/gcs-credentials.json=my-gcs-secret:latest`
 
 In this backend, the GCS client is configured here:
 
@@ -104,8 +104,8 @@ In your `cloudbuild.yaml` deploy step, set the env vars and mount the file:
 - `--set-env-vars` should include:
   - `GCS_FILE_UPLOAD_CONFIG=/secrets/gcs-credentials.json`
   - `GCS_BUCKET=${_GCS_BUCKET}`
-- `--update-secrets` should include:
-  - `/secrets/gcs-credentials.json=${_GCS_CREDENTIALS_SECRET}:latest`
+- `--set-secrets` should include the file-mount entry alongside your other env secrets:
+  - `MONGODB_URI=${_MONGODB_URI_SECRET}:latest,FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID_SECRET}:latest,FIREBASE_CLIENT_EMAIL=${_FIREBASE_CLIENT_EMAIL_SECRET}:latest,FIREBASE_PRIVATE_KEY=${_FIREBASE_PRIVATE_KEY_SECRET}:latest,/secrets/gcs-credentials.json=${_GCS_CREDENTIALS_SECRET}:latest`
 
 Reference: Cloud Run secrets for services documentation at [Configure secrets for services](https://cloud.google.com/run/docs/configuring/services/secrets).
 
