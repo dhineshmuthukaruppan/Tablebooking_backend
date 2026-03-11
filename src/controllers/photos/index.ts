@@ -18,7 +18,7 @@ export async function listPhotosHandler(req: Request, res: Response): Promise<vo
       collection: "venue_photos",
       query: { category, isDeleted: { $ne: true } },
       sort: { createdAt: -1 },
-    })) as { url: string; objectName?: string; category: PhotoCategory }[];
+    })) as unknown as { url: string; objectName?: string; category: PhotoCategory }[];
 
     res.status(200).json({
       data: docs.map((doc) => {
