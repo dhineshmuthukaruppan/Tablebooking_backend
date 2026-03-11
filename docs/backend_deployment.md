@@ -39,6 +39,32 @@ If you paste the key into an env var, it may contain literal `\n` sequences. The
 
 So it’s fine to store the key with escaped newlines (common in Secret Manager).
 
+### Firebase Admin configuration (local vs Cloud Run)
+
+Firebase Admin is initialized in `src/config/firebase-admin.ts` using the **same env vars in all environments**:
+
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
+
+The code now always does:
+
+- `credential: cert({ projectId, clientEmail, privateKey })`
+
+Previously, the code used `applicationDefault()` in production:
+
+- **Old pattern (replaced)**:
+  - `credential: env.NODE_ENV === "production" ? applicationDefault() : cert({ ... })`
+
+This meant Cloud Run could end up using the **GCP default service account / project**, which might not match the Firebase project configured in your frontend. That mismatch causes `verifyIdToken` to fail, returning `"Invalid or missing idToken"`.
+
+With the new pattern:
+
+- Local development (`.env.local`) and Cloud Run (secrets mapped to env vars) both talk to **the same Firebase project**, as long as you provide matching values.
+- We **do not** use `applicationDefault()` in production, to avoid accidentally verifying tokens against a different GCP project / service account than the frontend uses.
+
+If you see `Invalid or missing idToken` errors in Cloud Run but not locally, verify that the Firebase env vars in Secret Manager correspond to the **same Firebase project** as the one used by the frontend configuration.
+
 ## Recommended: use Secret Manager for sensitive values
 
 Do **not** put secrets into Cloud Build substitutions. Use Secret Manager and mount them as env vars in Cloud Run.
