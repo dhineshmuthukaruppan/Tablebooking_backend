@@ -29,8 +29,8 @@ app.use(
   cors({
     origin: (origin, cb) => {
       // Log every CORS check (see Cloud Run → Logs for deployed backend)
-      console.log("[CORS] allowed origins:", [...allowedOrigins]);
-      console.log("[CORS] request origin:", origin ?? "(none)");
+      console.log("CORS allowed origins:", [...allowedOrigins]);
+      console.log("CORS request origin:", origin ?? "(none)");
       if (!origin) return cb(null, true);
       const normalized = normalizeOrigin(origin);
       const allowed = allowedOrigins.has(normalized) || allowedOrigins.has(origin);
@@ -56,6 +56,11 @@ app.use(
     legacyHeaders: false,
   })
 );
+
+// Root: welcome message when accessing backend URL /
+app.get("/", (_req, res) => {
+  res.status(200).json({ message: "Hello, welcome to the application." });
+});
 
 // Version-agnostic health (optional). Versioned health: GET /api/v1/health
 app.get("/api/health", (_req, res) => {
