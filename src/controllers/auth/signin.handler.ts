@@ -9,8 +9,11 @@ export interface SigninBody {
 export async function signinHandler(req: Request, res: Response): Promise<void> {
   try {
     const { idToken } = (req.body as SigninBody) ?? {};
+    const hasToken = Boolean(idToken && typeof idToken === "string");
+    console.log("[signin] idToken present:", hasToken);
     const decoded = await verifyIdToken(idToken);
     if (!decoded) {
+      console.log("[signin] 401: invalid or missing idToken");
       res.status(401).json({ message: "Invalid or missing idToken" });
       return;
     }
@@ -58,7 +61,8 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
       message: "Signed in successfully",
       data: profile,
     });
-  } catch {
+  } catch (err) {
+    console.log("[signin] 401: verify or DB error", err instanceof Error ? err.message : "unknown");
     res.status(401).json({ message: "Invalid or expired authentication token" });
   }
 }

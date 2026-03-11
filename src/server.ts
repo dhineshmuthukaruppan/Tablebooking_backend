@@ -14,6 +14,9 @@ function attachDatabaseToApp(appInstance: Application): void {
 
 async function bootstrap(): Promise<void> {
   try {
+
+    console.log("environmental variables in server.ts", env);   
+
     await connectDatabase();
     attachDatabaseToApp(app);
     app.listen(env.PORT, () => {

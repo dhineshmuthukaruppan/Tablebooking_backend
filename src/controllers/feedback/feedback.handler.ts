@@ -70,6 +70,8 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
     }
 
     const now = new Date();
+    const userDisplayName = (user as { displayName?: string }).displayName;
+    const userEmail = (user as { email?: string }).email ?? "";
     const feedbackDoc = {
       userId: user.id,
       bookingId: new ObjectId(bookingIdStr),
@@ -79,6 +81,12 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
       atmosphereRating,
       description: description ?? undefined,
       images: images?.length ? images : undefined,
+      isPublicVisible: false,
+      profile: {
+        user_name: userDisplayName ?? (userEmail || "Guest"),
+        email: userEmail,
+      },
+      imageApprovals: images?.length ? images.map(() => false) : undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -110,6 +118,45 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
     });
 
     res.status(201).json({ message: "Feedback submitted", data: feedbackDoc });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/** GET /feedback/public — fetch feedbacks where isPublicVisible is true. Returns profile, ratings, description, and only approved images. */
+export async function getPublicFeedbackHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const rawList = await db.read.find({
+      req,
+      connectionString,
+      collection: "feedbacks",
+      query: { isPublicVisible: true },
+      sort: { createdAt: -1 },
+      limit: 100,
+    });
+    const list = rawList.map((doc: Record<string, unknown>) => {
+      const images = doc.images as string[] | undefined;
+      const imageApprovals = doc.imageApprovals as boolean[] | undefined;
+      let publicImages: string[] = [];
+      if (Array.isArray(images) && images.length > 0) {
+        if (Array.isArray(imageApprovals) && imageApprovals.length === images.length) {
+          publicImages = images.filter((_, i) => imageApprovals[i] === true);
+        }
+      }
+      return {
+        _id: doc._id,
+        profile: doc.profile,
+        overallRating: doc.overallRating,
+        foodRating: doc.foodRating,
+        serviceRating: doc.serviceRating,
+        atmosphereRating: doc.atmosphereRating,
+        description: doc.description,
+        images: publicImages,
+        createdAt: doc.createdAt,
+      };
+    });
+    res.status(200).json({ message: "Public feedback", data: list });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
