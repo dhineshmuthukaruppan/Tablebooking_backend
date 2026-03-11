@@ -4,3 +4,8 @@ dist
 .env.local
 .DS_Store
 *.log
+
+# GCS / service account keys – never commit
+config/secrets/
+**/*gcs*.json
+**/erp-one-india-*.json

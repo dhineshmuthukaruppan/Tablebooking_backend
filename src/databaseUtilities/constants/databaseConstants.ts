@@ -11,6 +11,7 @@ export const dbTables = {
   feedbacks: "feedbacks",
   venue_config: "venue_config",
   slot_inventory: "slot_inventory",
+  venue_photos: "venue_photos",
 } as const;
 
 export const connectionStrings = {

@@ -12,7 +12,13 @@ const envSchema = z.object({
   FIREBASE_PROJECT_ID: z.string().min(1, "FIREBASE_PROJECT_ID is required"),
   FIREBASE_CLIENT_EMAIL: z.string().min(1, "FIREBASE_CLIENT_EMAIL is required"),
   FIREBASE_PRIVATE_KEY: z.string().min(1, "FIREBASE_PRIVATE_KEY is required"),
-  CORS_ORIGIN: z.string().default("http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001"),
+  GCS_FILE_UPLOAD_CONFIG: z.string().min(1, "GCS_FILE_UPLOAD_CONFIG is required"),
+  GCS_BUCKET: z.string().min(1, "GCS_BUCKET is required"),
+  CORS_ORIGIN: z
+    .string()
+    .default(
+      "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001"
+    ),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(200),
 });
