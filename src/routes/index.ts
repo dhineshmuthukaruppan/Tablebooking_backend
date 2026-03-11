@@ -12,6 +12,7 @@ import { bookingsRoutes } from "./bookings/bookings.routes";
 import { couponsRoutes } from "./coupons/coupons.routes";
 import { feedbackRoutes } from "./feedback/feedback.routes";
 import { videosRoutes } from "./videos/videos.routes";
+import { photosRoutes } from "./photos/photos.routes";
 
 const v1Router = Router();
 
@@ -42,5 +43,6 @@ v1Router.use("/bookings", bookingsRoutes);
 v1Router.use("/coupons", couponsRoutes);
 v1Router.use("/feedback", feedbackRoutes);
 v1Router.use("/videos", videosRoutes);
+v1Router.use("/photos", photosRoutes);
 
 export { v1Router };
