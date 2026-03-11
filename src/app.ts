@@ -19,6 +19,7 @@ app.use(
     origin: (origin, cb) => {
       if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
       return cb(null, false);
+
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -38,6 +39,11 @@ app.use(
     legacyHeaders: false,
   })
 );
+
+// Root: welcome message when accessing backend URL /
+app.get("/", (_req, res) => {
+  res.status(200).json({ message: "Hello, welcome to the application." });
+});
 
 // Version-agnostic health (optional). Versioned health: GET /api/v1/health
 app.get("/api/health", (_req, res) => {
