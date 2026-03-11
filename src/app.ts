@@ -13,9 +13,12 @@ const app = express();
 // CORS: allow frontend origin so browser preflight (OPTIONS) and actual requests succeed
 // CORS_ORIGIN can be a comma-separated list of exact origins, e.g.:
 // "https://tablebooking-ui-dev-....run.app,http://localhost:3000"
+function normalizeOrigin(url: string): string {
+  return url.trim().replace(/\/+$/, "") || url;
+}
 const allowedOrigins = new Set(
   env.CORS_ORIGIN.split(",")
-    .map((o) => o.trim())
+    .map((o) => normalizeOrigin(o))
     .filter(Boolean)
 );
 if (allowedOrigins.size === 0) {
@@ -27,7 +30,11 @@ app.use(
     origin: (origin, cb) => {
       // Allow non-browser / same-origin requests
       if (!origin) return cb(null, true);
-      if (allowedOrigins.has(origin)) return cb(null, true);
+      console.log("origin", origin);    
+      const normalized = normalizeOrigin(origin);
+      console.log("normalized", normalized);
+      console.log("allowedOrigins", allowedOrigins);
+      if (allowedOrigins.has(normalized) || allowedOrigins.has(origin)) return cb(null, true);
       return cb(null, false);
     },
     credentials: true,
