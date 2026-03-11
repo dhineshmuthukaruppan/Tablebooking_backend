@@ -28,13 +28,14 @@ if (allowedOrigins.size === 0) {
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow non-browser / same-origin requests
+      // Log every CORS check (see Cloud Run → Logs for deployed backend)
+      console.log("[CORS] allowed origins:", [...allowedOrigins]);
+      console.log("[CORS] request origin:", origin ?? "(none)");
       if (!origin) return cb(null, true);
-      console.log("origin", origin);    
       const normalized = normalizeOrigin(origin);
-      console.log("normalized", normalized);
-      console.log("allowedOrigins", allowedOrigins);
-      if (allowedOrigins.has(normalized) || allowedOrigins.has(origin)) return cb(null, true);
+      const allowed = allowedOrigins.has(normalized) || allowedOrigins.has(origin);
+      console.log("[CORS] normalized:", normalized, "allowed:", allowed);
+      if (allowed) return cb(null, true);
       return cb(null, false);
     },
     credentials: true,
