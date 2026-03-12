@@ -47,6 +47,7 @@ export async function registerHandler(req: Request, res: Response): Promise<void
         email,
         ...(displayNameTrimmed && { displayName: displayNameTrimmed }),
         role: email==="mdhas0304@gmail.com"?"admin":"user",
+        status: "active",
         isEmailVerified,
         isEligibleForCoupons: false,
         createdAt: now,

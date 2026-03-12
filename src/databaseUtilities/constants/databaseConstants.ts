@@ -13,6 +13,8 @@ export const dbTables = {
   slot_inventory: "slot_inventory",
   venue_photos: "venue_photos",
   table_allocations: "table_allocations",
+  menu_categories: "menu_categories",
+  menu_products: "menu_products",
 } as const;
 
 export const connectionStrings = {
