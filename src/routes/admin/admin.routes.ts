@@ -6,6 +6,7 @@ import { Router } from "express";
 import { auth } from "../../services";
 import * as adminController from "../../controllers/admin";
 import { masterRoutes } from "./master";
+import { menuAdminRoutes } from "./menu.routes";
 
 const router = Router();
 
@@ -45,6 +46,7 @@ router.patch(
 );
 
 router.use("/master", masterRoutes);
+router.use("/menu", menuAdminRoutes);
 
 router.get(
   "/feedback",

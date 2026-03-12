@@ -58,6 +58,37 @@ export async function uploadPhoto(params: {
   return { publicUrl, objectName };
 }
 
+export type MenuImageFolder = "categories" | "products";
+
+/** Upload menu image (category cover or product image). Returns objectName to store in DB. */
+export async function uploadMenuImage(params: {
+  buffer: Buffer;
+  originalName: string;
+  mimeType: string;
+  folder: MenuImageFolder;
+}): Promise<{ publicUrl: string; objectName: string }> {
+  if (!bucket) {
+    throw new Error("GCS is not configured. Missing GCS_FILE_UPLOAD_CONFIG or GCS_BUCKET.");
+  }
+
+  const { buffer, originalName, mimeType, folder } = params;
+  const appFolder = "table-booking";
+  const safeName = originalName.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const timestamp = Date.now();
+  const objectName = `${appFolder}/menu/${folder}/${timestamp}-${safeName}`;
+
+  const file = bucket.file(objectName);
+
+  await file.save(buffer, {
+    contentType: mimeType,
+    resumable: false,
+  });
+
+  const publicUrl = `https://storage.googleapis.com/${bucket.name}/${objectName}`;
+
+  return { publicUrl, objectName };
+}
+
 /** Download a file from GCS (for proxy serve when bucket is private). */
 export async function getFileBuffer(objectName: string): Promise<{
   buffer: Buffer;
