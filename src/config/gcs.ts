@@ -3,22 +3,18 @@ import { env } from "./env";
 
 type PhotoCategory = "ambience" | "food";
 
-const credentialsPath = env.GCS_FILE_UPLOAD_CONFIG;
 const bucketName = env.GCS_BUCKET;
 
-if (!credentialsPath || !bucketName) {
+if (!bucketName) {
   // Fail fast during startup if config is missing so we don't get
   // confusing runtime errors on first upload.
   // eslint-disable-next-line no-console
-  console.warn(
-    "[gcs] GCS_FILE_UPLOAD_CONFIG or GCS_BUCKET is not set. Photo upload endpoints will fail."
-  );
+  console.warn("[gcs] GCS_BUCKET is not set. Photo upload endpoints will fail.");
 }
 
-const storage =
-  credentialsPath && bucketName
-    ? new Storage({ keyFilename: credentialsPath })
-    : undefined;
+// Use Application Default Credentials (ADC). On Cloud Run, this will use the
+// service account attached to the service, which must have Storage permissions.
+const storage = bucketName ? new Storage() : undefined;
 
 const bucket = storage && bucketName ? storage.bucket(bucketName) : undefined;
 
@@ -35,7 +31,7 @@ export async function uploadPhoto(params: {
   appFolder?: string;
 }): Promise<UploadedPhotoInfo> {
   if (!bucket) {
-    throw new Error("GCS is not configured. Missing GCS_FILE_UPLOAD_CONFIG or GCS_BUCKET.");
+    throw new Error("GCS is not configured. Missing GCS_BUCKET.");
   }
 
   const { buffer, originalName, mimeType, category, appFolder = "table-booking" } = params;
