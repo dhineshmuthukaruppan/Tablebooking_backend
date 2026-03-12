@@ -32,11 +32,21 @@ export async function ensureMealTimeMasterSlotConfigIndex(db: Db): Promise<void>
   await coll.createIndex({ _id: 1, "slotConfigs.effectiveFrom": -1 });
 }
 
+export async function ensureTableAllocationsIndexes(db: Db): Promise<void> {
+  const coll = db.collection(dbTables.table_allocations);
+  await coll.createIndex(
+    { allocationDate: 1, tableKey: 1, bookingId: 1 },
+    { unique: true }
+  );
+  await coll.createIndex({ allocationDate: 1, bookingId: 1 });
+}
+
 export async function ensureAllIndexes(db: Db): Promise<void> {
   await ensureUsersIndexes(db);
   await ensureBookingsIndexes(db);
   await ensureSlotInventoryIndexes(db);
   await ensureMealTimeMasterSlotConfigIndex(db);
+  await ensureTableAllocationsIndexes(db);
 }
 
 /**

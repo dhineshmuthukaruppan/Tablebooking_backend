@@ -115,6 +115,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
       billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
       payment?: { status?: "pending" | "paid"; method?: "stripe" | "cash" | "card" };
       feedbackRequired?: boolean;
+      customerName?: string;
     };
     const actual = Number(body.billing?.actualAmount ?? 0);
     const discount = Number(body.billing?.discountAmount ?? 0);
@@ -125,9 +126,13 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
     const method = body.payment?.method ?? "cash";
     const isOffline = method === "cash" || method === "card";
     const now = new Date();
+    const customerName =
+      typeof body.customerName === "string" && body.customerName.trim()
+        ? body.customerName.trim()
+        : WALK_IN_OFFLINE_USER;
     const doc = {
       userId: null,
-      customerName: WALK_IN_OFFLINE_USER,
+      customerName,
       customerPhone: undefined,
       customerEmail: undefined,
       bookingDate: now,
