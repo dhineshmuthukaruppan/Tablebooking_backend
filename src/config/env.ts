@@ -21,6 +21,14 @@ const envSchema = z.object({
     ),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(200),
+  // Optional: for sending verification email when admin adds a user
+  FRONTEND_URL: z.string().url().optional().or(z.literal("")),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_SECURE: z.coerce.boolean().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().email().optional().or(z.literal("")),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -31,7 +39,10 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+const data = parsed.data;
 export const env = {
-  ...parsed.data,
-  FIREBASE_PRIVATE_KEY: parsed.data.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+  ...data,
+  FIREBASE_PRIVATE_KEY: data.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+  FRONTEND_URL: data.FRONTEND_URL && data.FRONTEND_URL.trim() ? data.FRONTEND_URL : undefined,
+  MAIL_FROM: data.MAIL_FROM && data.MAIL_FROM.trim() ? data.MAIL_FROM : undefined,
 };

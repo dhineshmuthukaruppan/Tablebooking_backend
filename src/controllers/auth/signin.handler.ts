@@ -25,11 +25,18 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
       connectionString,
       collection: "users",
       query: { firebaseUid: decoded.uid },
-    }) as { _id?: import("mongodb").ObjectId; email: string; displayName?: string; role: string; isEmailVerified: boolean; isEligibleForCoupons?: boolean; createdAt?: Date } | null;
+    }) as { _id?: import("mongodb").ObjectId; email: string; displayName?: string; role: string; status?: string; isEmailVerified: boolean; isEligibleForCoupons?: boolean; createdAt?: Date } | null;
 
     if (!user) {
       res.status(403).json({
         message: "User not found. Please register first.",
+      });
+      return;
+    }
+
+    if (user.status === "inactive") {
+      res.status(403).json({
+        message: "You are inactive. Please contact admin to login.",
       });
       return;
     }
@@ -44,6 +51,13 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
         update: { $set: { isEmailVerified, updatedAt: new Date() } },
       });
       user = { ...user, isEmailVerified };
+    }
+
+    if (!user.isEmailVerified) {
+      res.status(403).json({
+        message: "Please verify the email to sign in.",
+      });
+      return;
     }
 
     const profile = {

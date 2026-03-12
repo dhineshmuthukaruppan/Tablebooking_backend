@@ -10,6 +10,13 @@ import { menuAdminRoutes } from "./menu.routes";
 
 const router = Router();
 
+router.post(
+  "/bookings/list",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.listAdminBookingsHandler
+);
+
 router.patch(
   "/bookings/:id",
   auth.authentication.authenticate,

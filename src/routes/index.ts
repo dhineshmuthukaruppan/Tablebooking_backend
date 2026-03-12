@@ -14,6 +14,7 @@ import { feedbackRoutes } from "./feedback/feedback.routes";
 import { videosRoutes } from "./videos/videos.routes";
 import { photosRoutes } from "./photos/photos.routes";
 import { menuRoutes } from "./menu/menu.routes";
+import { usermanagementRoutes } from "./usermanagement/usermanagement.routes";
 
 const v1Router = Router();
 
@@ -40,6 +41,7 @@ v1Router.get("/admin/master/table-master-ping", (_req, res) =>
 );
 
 v1Router.use("/admin", adminRoutes);
+v1Router.use("/usermanagement", usermanagementRoutes);
 v1Router.use("/bookings", bookingsRoutes);
 v1Router.use("/coupons", couponsRoutes);
 v1Router.use("/feedback", feedbackRoutes);
