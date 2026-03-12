@@ -1,9 +1,17 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import { logger } from "../../config/logger";
 import type { TableMasterSection } from "./master/table-master.handler";
 
 const TABLE_MASTER_CONFIG_ID = "config";
+
+/** Security: allowed tableKey format (e.g. s0-t0). */
+const TABLE_KEY_REGEX = /^s\d+-t\d+$/;
+const MAX_BOOKING_ID_LENGTH = 128;
+const MAX_GUEST_NAME_LENGTH = 200;
+const MAX_ALLOCATIONS_PER_REQUEST = 50;
+const MAX_GUESTS_AT_TABLE = 999;
 
 export interface AllocationDoc {
   _id?: unknown;
@@ -54,7 +62,8 @@ export async function getTableAllocationsHandler(req: Request, res: Response): P
     })) as AllocationDoc[];
 
     res.status(200).json({ data: list });
-  } catch {
+  } catch (err) {
+    logger.error("allocations.get.failed", { handler: "getTableAllocations", error: err instanceof Error ? err.message : "unknown" });
     res.status(500).json({ message: "Internal server error" });
   }
 }
@@ -80,6 +89,10 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
         : new Date().toISOString().slice(0, 10);
 
     const raw = Array.isArray(body.allocations) ? body.allocations : [];
+    if (raw.length > MAX_ALLOCATIONS_PER_REQUEST) {
+      res.status(400).json({ message: `Too many allocations (max ${MAX_ALLOCATIONS_PER_REQUEST})` });
+      return;
+    }
     const allocations: Array<{
       allocationDate: string;
       tableKey: string;
@@ -94,21 +107,30 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
     for (const a of raw) {
       if (a == null || typeof a !== "object") continue;
       const o = a as Record<string, unknown>;
-      const tableKey = typeof o.tableKey === "string" ? o.tableKey : "";
-      const bookingId = typeof o.bookingId === "string" ? o.bookingId : "";
+      const tableKeyRaw = typeof o.tableKey === "string" ? o.tableKey.trim() : "";
+      const bookingIdRaw = typeof o.bookingId === "string" ? o.bookingId.trim() : "";
+      if (!tableKeyRaw || !bookingIdRaw) continue;
+      if (!TABLE_KEY_REGEX.test(tableKeyRaw)) continue;
+      if (bookingIdRaw.length > MAX_BOOKING_ID_LENGTH) continue;
       const guestsAtThisTable =
-        typeof o.guestsAtThisTable === "number" && o.guestsAtThisTable >= 0 ? o.guestsAtThisTable : 0;
-      if (!tableKey || !bookingId) continue;
+        typeof o.guestsAtThisTable === "number" && o.guestsAtThisTable >= 0 && o.guestsAtThisTable <= MAX_GUESTS_AT_TABLE
+          ? o.guestsAtThisTable
+          : 0;
+      let guestName: string | undefined;
+      if (typeof o.guestName === "string") {
+        const trimmed = o.guestName.trim();
+        guestName = trimmed.length <= MAX_GUEST_NAME_LENGTH ? trimmed : trimmed.slice(0, MAX_GUEST_NAME_LENGTH);
+      }
       allocations.push({
         allocationDate,
-        tableKey,
-        sectionIndex: typeof o.sectionIndex === "number" ? o.sectionIndex : 0,
-        tableIndex: typeof o.tableIndex === "number" ? o.tableIndex : 0,
-        bookingId,
-        guestName: typeof o.guestName === "string" ? o.guestName : undefined,
-        guestCount: typeof o.guestCount === "number" ? o.guestCount : undefined,
+        tableKey: tableKeyRaw,
+        sectionIndex: typeof o.sectionIndex === "number" && Number.isInteger(o.sectionIndex) && o.sectionIndex >= 0 ? o.sectionIndex : 0,
+        tableIndex: typeof o.tableIndex === "number" && Number.isInteger(o.tableIndex) && o.tableIndex >= 0 ? o.tableIndex : 0,
+        bookingId: bookingIdRaw,
+        guestName: guestName || undefined,
+        guestCount: typeof o.guestCount === "number" && o.guestCount >= 0 ? o.guestCount : undefined,
         guestsAtThisTable,
-        status: typeof o.status === "string" ? o.status : "running",
+        status: typeof o.status === "string" && (o.status === "running" || o.status === "paid") ? o.status : "running",
       });
     }
 
@@ -223,7 +245,8 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
     }
 
     res.status(200).json({ message: "Allocations created", count: docs.length });
-  } catch {
+  } catch (err) {
+    logger.error("allocations.create.failed", { handler: "postTableAllocations", error: err instanceof Error ? err.message : "unknown" });
     res.status(500).json({ message: "Internal server error" });
   }
 }
@@ -236,11 +259,16 @@ export async function deleteTableAllocationsHandler(req: Request, res: Response)
     const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
     if (bookingId) {
+      const sanitized = bookingId.trim().slice(0, MAX_BOOKING_ID_LENGTH);
+      if (!sanitized) {
+        res.status(400).json({ message: "Invalid bookingId" });
+        return;
+      }
       const result = await db.deleteOp.deleteMany({
         req,
         connectionString,
         collection: "table_allocations",
-        query: { bookingId },
+        query: { bookingId: sanitized },
       });
       res.status(200).json({ message: "Allocations removed", deletedCount: result.deletedCount });
       return;
@@ -262,7 +290,8 @@ export async function deleteTableAllocationsHandler(req: Request, res: Response)
     }
 
     res.status(400).json({ message: "Provide query ?bookingId=... or path /:id" });
-  } catch {
+  } catch (err) {
+    logger.error("allocations.delete.failed", { handler: "deleteTableAllocations", error: err instanceof Error ? err.message : "unknown" });
     res.status(500).json({ message: "Internal server error" });
   }
 }
