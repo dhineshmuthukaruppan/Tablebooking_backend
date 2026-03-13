@@ -17,6 +17,8 @@ export interface AdminListBookingsBody {
   guestCount?: number;
   section?: string[];
   feedback?: "given" | "required";
+  /** Filter by slot (24h "HH:mm"). Booking has slot: { startTime, endTime }. */
+  slots?: { startTime: string; endTime: string }[];
 }
 
 /**
@@ -93,6 +95,22 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
       query.feedback = { $ne: null };
     } else if (body.feedback === "required") {
       query.feedbackRequired = true;
+    }
+
+    // Slot filter: booking.slot = { startTime: "07:30", endTime: "08:00" } (24h)
+    const slotsArr = Array.isArray(body.slots) ? body.slots : [];
+    const validSlots = slotsArr.filter(
+      (s) =>
+        typeof s?.startTime === "string" &&
+        s.startTime.trim() !== "" &&
+        typeof s?.endTime === "string" &&
+        s.endTime.trim() !== ""
+    );
+    if (validSlots.length > 0) {
+      query.$or = validSlots.map((s) => ({
+        "slot.startTime": s.startTime.trim(),
+        "slot.endTime": s.endTime.trim(),
+      }));
     }
 
     const projection = {

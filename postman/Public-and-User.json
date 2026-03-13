@@ -1,0 +1,503 @@
+{
+  "info": {
+    "name": "Public & User – Table Booking",
+    "description": "Public and authenticated user-facing APIs for the Table Booking backend (health, venue config, bookings, menu, photos, coupons, feedback, videos). Set `baseUrl` (e.g. http://localhost:5001/api/v1) and `bearerToken` (Firebase ID token from client after login).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5001/api/v1" },
+    { "key": "bearerToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Public",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "GET /health — Basic service health check."
+          }
+        },
+        {
+          "name": "Venue config (landing page)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/venue/config",
+              "host": ["{{baseUrl}}"],
+              "path": ["venue", "config"]
+            },
+            "description": "GET /venue/config — Public venue configuration for landing page (location, timing, facilities, etc.)."
+          }
+        },
+        {
+          "name": "Coupons – list (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/coupons",
+              "host": ["{{baseUrl}}"],
+              "path": ["coupons"]
+            },
+            "description": "GET /coupons — List available coupons (public)."
+          }
+        },
+        {
+          "name": "Feedback – list (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/feedback",
+              "host": ["{{baseUrl}}"],
+              "path": ["feedback"]
+            },
+            "description": "GET /feedback — List feedback items (public view)."
+          }
+        },
+        {
+          "name": "Videos – list (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/videos",
+              "host": ["{{baseUrl}}"],
+              "path": ["videos"]
+            },
+            "description": "GET /videos — List promotional / info videos (public)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings (User)",
+      "item": [
+        {
+          "name": "List bookings (paginated, optional filters)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings?page=1&limit=10&tab=upcoming",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "tab", "value": "upcoming" },
+                { "key": "customerId", "value": "", "disabled": true }
+              ]
+            },
+            "description": "GET /bookings — Server-side paginated bookings list. Use tab=upcoming|past or customerId."
+          }
+        },
+        {
+          "name": "List feedback-pending bookings (last 4 days)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/feedback-pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "feedback-pending"]
+            },
+            "description": "GET /bookings/feedback-pending — Completed bookings in last 4 days that still require feedback for current user."
+          }
+        },
+        {
+          "name": "Get booking config",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/config",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "config"]
+            },
+            "description": "GET /bookings/config — Booking configuration (guest limits, sections, etc.)."
+          }
+        },
+        {
+          "name": "Get available slots",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/slots?date=2025-03-12&guestCount=4§ion=Indoor",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "slots"],
+              "query": [
+                { "key": "date", "value": "2025-03-12" },
+                { "key": "guestCount", "value": "4" },
+                { "key": "section", "value": "Indoor" }
+              ]
+            },
+            "description": "GET /bookings/slots — Fetch available slots for a given date, guest count and section."
+          }
+        },
+        {
+          "name": "Get booking by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", ":id"]
+            },
+            "description": "GET /bookings/:id — Get a single booking by id."
+          }
+        },
+        {
+          "name": "Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingDate\": \"2025-03-12\",\n  \"guestCount\": 4,\n  \"sectionName\": \"Indoor\",\n  \"slot\": {\n    \"name\": \"Dinner 7–9 PM\",\n    \"startTime\": \"19:00\",\n    \"endTime\": \"21:00\"\n  },\n  \"customerName\": \"John Doe\",\n  \"customerEmail\": \"john@example.com\",\n  \"customerPhone\": \"9876543210\",\n  \"notes\": \"Anniversary dinner\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings"]
+            },
+            "description": "POST /bookings — Create a new booking for the authenticated user."
+          }
+        },
+        {
+          "name": "Cancel booking",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/:id/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", ":id", "cancel"]
+            },
+            "description": "PATCH /bookings/:id/cancel — Cancel a booking. Replace :id with booking _id."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Menu (Public)",
+      "item": [
+        {
+          "name": "List categories",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/menu/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["menu", "categories"]
+            },
+            "description": "GET /menu/categories — List all menu categories (public)."
+          }
+        },
+        {
+          "name": "Get category by id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/menu/categories/id/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["menu", "categories", "id", "{{categoryId}}"]
+            },
+            "description": "GET /menu/categories/id/:categoryId — Get category by MongoDB id."
+          }
+        },
+        {
+          "name": "Get category by slug",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/menu/categories/{{categorySlug}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["menu", "categories", "{{categorySlug}}"]
+            },
+            "description": "GET /menu/categories/:categorySlug — Get category by slug."
+          }
+        },
+        {
+          "name": "Get product by slug",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/menu/product/{{productSlug}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["menu", "product", "{{productSlug}}"]
+            },
+            "description": "GET /menu/product/:productSlug — Get a single product by slug."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Photos (Venue images)",
+      "item": [
+        {
+          "name": "List photos",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/photos?category=ambience",
+              "host": ["{{baseUrl}}"],
+              "path": ["photos"],
+              "query": [
+                { "key": "category", "value": "ambience" }
+              ]
+            },
+            "description": "GET /photos — List venue photos (ambience or food)."
+          }
+        },
+        {
+          "name": "Serve photo by object name",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/photos/serve?object={{objectName}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["photos", "serve"],
+              "query": [
+                { "key": "object", "value": "{{objectName}}" }
+              ]
+            },
+            "description": "GET /photos/serve?object=... — Serve a single image from GCS by object name."
+          }
+        },
+        {
+          "name": "Upload photo (admin/staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "image", "type": "file", "src": [] },
+                { "key": "category", "value": "ambience", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["photos"]
+            },
+            "description": "POST /photos — Upload a new venue photo (admin/staff only, multipart)."
+          }
+        },
+        {
+          "name": "Delete photo (admin/staff)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/photos?object={{objectName}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["photos"],
+              "query": [
+                { "key": "object", "value": "{{objectName}}" }
+              ]
+            },
+            "description": "DELETE /photos?object=... — Soft delete a photo and remove it from GCS (admin/staff)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Coupons (Redeem)",
+      "item": [
+        {
+          "name": "Redeem coupon (authenticated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"WELCOME50\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/coupons/redeem",
+              "host": ["{{baseUrl}}"],
+              "path": ["coupons", "redeem"]
+            },
+            "description": "POST /coupons/redeem — Redeem a coupon for the authenticated user."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Feedback (User)",
+      "item": [
+        {
+          "name": "Get feedback by booking id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/feedback/by-booking?bookingId={{bookingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["feedback", "by-booking"],
+              "query": [
+                { "key": "bookingId", "value": "{{bookingId}}" }
+              ]
+            },
+            "description": "GET /feedback/by-booking — Get feedback details for a specific booking (authenticated)."
+          }
+        },
+        {
+          "name": "Submit feedback for booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comments\": \"Great experience! Loved the ambience and service.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/feedback",
+              "host": ["{{baseUrl}}"],
+              "path": ["feedback"]
+            },
+            "description": "POST /feedback — Submit feedback for a booking (authenticated)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Videos (Admin)",
+      "item": [
+        {
+          "name": "Create video (admin/staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Promo Video\",\n  \"url\": \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/videos",
+              "host": ["{{baseUrl}}"],
+              "path": ["videos"]
+            },
+            "description": "POST /videos — Create a new video entry (admin/staff only)."
+          }
+        }
+      ]
+    }
+  ]
+}
+
