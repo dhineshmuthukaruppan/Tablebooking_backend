@@ -110,8 +110,9 @@ export async function uploadMenuImage(params: {
   mimeType: string;
   folder: MenuImageFolder;
 }): Promise<{ publicUrl: string; objectName: string }> {
+  const bucket = await getBucket();
   if (!bucket) {
-    throw new Error("GCS is not configured. Missing GCS_FILE_UPLOAD_CONFIG or GCS_BUCKET.");
+    throw new Error("GCS is not configured. Missing GCS_BUCKET.");
   }
 
   const { buffer, originalName, mimeType, folder } = params;
