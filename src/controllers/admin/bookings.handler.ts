@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import * as bookingSequence from "../../services/bookingSequence";
 
 const ADMIN_BOOKING_STATUSES = ["pending", "confirmed", "completed", "noshow", "cancelled"] as const;
 type AdminBookingStatus = (typeof ADMIN_BOOKING_STATUSES)[number];
@@ -81,6 +82,8 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
     }
 
     const projection = {
+      _id: 1,
+      bookingNumber: 1,
       customerName: 1,
       customerEmail: 1,
       customerPhone: 1,
@@ -253,6 +256,8 @@ const WALK_IN_OFFLINE_USER = "Offline user";
 
 /**
  * POST /admin/bookings/walk-in — create a minimal booking for walk-in/offline user payment (no prior booking).
+ * Optional body: bookingDate, sectionId, slotStartTime, slotEndTime, guestCount, sectionName — when provided,
+ * the walk-in booking is stored with that slot (for dashboard). Slot_inventory is updated at allocation time (POST table-allocations), not here.
  */
 export async function postWalkInPaymentHandler(req: Request, res: Response): Promise<void> {
   try {
@@ -267,6 +272,12 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
       payment?: { status?: "pending" | "paid"; method?: "stripe" | "cash" | "card" };
       feedbackRequired?: boolean;
       customerName?: string;
+      bookingDate?: string;
+      sectionId?: string;
+      slotStartTime?: string;
+      slotEndTime?: string;
+      guestCount?: number;
+      sectionName?: string;
     };
     const actual = Number(body.billing?.actualAmount ?? 0);
     const discount = Number(body.billing?.discountAmount ?? 0);
@@ -277,20 +288,68 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
     const method = body.payment?.method ?? "cash";
     const isOffline = method === "cash" || method === "card";
     const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+    const nowHHmm = `${hh}:${mm}`;
     const customerName =
       typeof body.customerName === "string" && body.customerName.trim()
         ? body.customerName.trim()
         : WALK_IN_OFFLINE_USER;
+
+    let bookingDate: Date = now;
+    let sectionId: ObjectId | null = null;
+    let slotStartTime = nowHHmm;
+    let slotEndTime = nowHHmm;
+    let guestCount = 0;
+    let sectionName = "Walk-in";
+
+    const hasSlotParams =
+      typeof body.bookingDate === "string" &&
+      body.bookingDate.trim().length >= 10 &&
+      typeof body.sectionId === "string" &&
+      body.sectionId.trim() !== "" &&
+      typeof body.slotStartTime === "string" &&
+      body.slotStartTime.trim() !== "" &&
+      typeof body.slotEndTime === "string" &&
+      body.slotEndTime.trim() !== "" &&
+      typeof body.guestCount === "number" &&
+      body.guestCount >= 0;
+
+    if (hasSlotParams) {
+      const dateStr = body.bookingDate!.trim().slice(0, 10);
+      const parsedDate = new Date(dateStr + "T00:00:00.000Z");
+      if (Number.isNaN(parsedDate.getTime())) {
+        res.status(400).json({ message: "Invalid bookingDate" });
+        return;
+      }
+      bookingDate = parsedDate;
+      try {
+        sectionId = new ObjectId(body.sectionId!.trim());
+      } catch {
+        res.status(400).json({ message: "Invalid sectionId" });
+        return;
+      }
+      slotStartTime = body.slotStartTime!.trim();
+      slotEndTime = body.slotEndTime!.trim();
+      guestCount = Math.min(999, Math.max(0, Math.floor(body.guestCount!)));
+      sectionName =
+        typeof body.sectionName === "string" && body.sectionName.trim()
+          ? body.sectionName.trim()
+          : "Walk-in";
+    }
+
+    const bookingNumber = await bookingSequence.getNextBookingNumber(req);
     const doc = {
+      bookingNumber,
       userId: null,
       customerName,
       customerPhone: undefined,
       customerEmail: undefined,
-      bookingDate: now,
-      sectionId: null,
-      sectionName: "Walk-in",
-      slot: { startTime: "", endTime: "" },
-      guestCount: 0,
+      bookingDate,
+      sectionId,
+      sectionName,
+      slot: { startTime: slotStartTime, endTime: slotEndTime },
+      guestCount,
       status: "completed",
       coupon: null,
       billing: {

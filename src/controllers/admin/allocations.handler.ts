@@ -2,7 +2,12 @@ import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
 import { logger } from "../../config/logger";
+import * as slotInventory from "../../services/slotInventory";
 import type { TableMasterSection } from "./master/table-master.handler";
+
+function isOfflineBookingId(bookingId: string): boolean {
+  return bookingId === "__offline__" || bookingId.startsWith("offline_");
+}
 
 const TABLE_MASTER_CONFIG_ID = "config";
 
@@ -26,6 +31,11 @@ export interface AllocationDoc {
   status: string;
   allocatedBy: string;
   allocatedByName?: string;
+  /** For offline/walk-in: slot and section for slot_inventory when recording payment. */
+  slotStartTime?: string;
+  slotEndTime?: string;
+  sectionId?: string;
+  sectionName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -103,6 +113,10 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
       guestCount?: number;
       guestsAtThisTable: number;
       status: string;
+      slotStartTime?: string;
+      slotEndTime?: string;
+      sectionId?: string;
+      sectionName?: string;
     }> = [];
     for (const a of raw) {
       if (a == null || typeof a !== "object") continue;
@@ -121,6 +135,10 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
         const trimmed = o.guestName.trim();
         guestName = trimmed.length <= MAX_GUEST_NAME_LENGTH ? trimmed : trimmed.slice(0, MAX_GUEST_NAME_LENGTH);
       }
+      const slotStartTime = typeof o.slotStartTime === "string" && o.slotStartTime.trim() ? o.slotStartTime.trim() : undefined;
+      const slotEndTime = typeof o.slotEndTime === "string" && o.slotEndTime.trim() ? o.slotEndTime.trim() : undefined;
+      const sectionId = typeof o.sectionId === "string" && o.sectionId.trim() ? o.sectionId.trim() : undefined;
+      const sectionName = typeof o.sectionName === "string" && o.sectionName.trim() ? o.sectionName.trim() : undefined;
       allocations.push({
         allocationDate,
         tableKey: tableKeyRaw,
@@ -131,6 +149,10 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
         guestCount: typeof o.guestCount === "number" && o.guestCount >= 0 ? o.guestCount : undefined,
         guestsAtThisTable,
         status: typeof o.status === "string" && (o.status === "running" || o.status === "paid") ? o.status : "running",
+        slotStartTime,
+        slotEndTime,
+        sectionId,
+        sectionName,
       });
     }
 
@@ -196,22 +218,83 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
       tableTotals.set(a.tableKey, newTotal);
     }
 
+    // Update slot_inventory when allocating offline users with slot info (run at allocation, not payment)
+    const offlineWithSlot = allocations.filter(
+      (a) =>
+        isOfflineBookingId(a.bookingId) &&
+        a.slotStartTime &&
+        a.slotEndTime &&
+        a.sectionId
+    );
+    if (offlineWithSlot.length > 0) {
+      const slotKey = (st: string, et: string, sid: string) => `${st}|${et}|${sid}`;
+      const guestCountBySlot = new Map<string, number>();
+      for (const a of offlineWithSlot) {
+        const key = slotKey(a.slotStartTime!, a.slotEndTime!, a.sectionId!);
+        const cur = guestCountBySlot.get(key) ?? 0;
+        guestCountBySlot.set(key, cur + (a.guestsAtThisTable ?? 0));
+      }
+      const bookingDate = new Date(allocationDate + "T00:00:00.000Z");
+      const totalSeats = await slotInventory.getTotalSeatsFromTableMaster(req);
+      for (const [key, guestCount] of guestCountBySlot) {
+        if (guestCount <= 0) continue;
+        const [slotStartTime, slotEndTime, sectionIdStr] = key.split("|");
+        let sectionId: ObjectId;
+        try {
+          sectionId = new ObjectId(sectionIdStr);
+        } catch {
+          res.status(400).json({ message: "Invalid sectionId for offline slot" });
+          return;
+        }
+        await slotInventory.ensureSlotInventory({
+          req,
+          bookingDate,
+          sectionId,
+          slotStartTime,
+          slotEndTime,
+          totalSeats,
+        });
+        const allocated = await slotInventory.allocateSeats({
+          req,
+          bookingDate,
+          sectionId,
+          slotStartTime,
+          slotEndTime,
+          guestCount,
+        });
+        if (!allocated) {
+          const remaining = await slotInventory.getRemainingSeats(req, bookingDate, sectionId, slotStartTime, slotEndTime);
+          res.status(400).json({
+            message: `Slot ${slotStartTime}–${slotEndTime} is full. Available only for ${remaining} guests.`,
+          });
+          return;
+        }
+      }
+    }
+
     const now = new Date();
-    const docs: Record<string, unknown>[] = allocations.map((a) => ({
-      allocationDate: a.allocationDate,
-      tableKey: a.tableKey,
-      sectionIndex: a.sectionIndex,
-      tableIndex: a.tableIndex,
-      bookingId: a.bookingId,
-      guestName: a.guestName,
-      guestCount: a.guestCount,
-      guestsAtThisTable: a.guestsAtThisTable,
-      status: a.status,
-      allocatedBy,
-      allocatedByName,
-      createdAt: now,
-      updatedAt: now,
-    }));
+    const docs: Record<string, unknown>[] = allocations.map((a) => {
+      const base: Record<string, unknown> = {
+        allocationDate: a.allocationDate,
+        tableKey: a.tableKey,
+        sectionIndex: a.sectionIndex,
+        tableIndex: a.tableIndex,
+        bookingId: a.bookingId,
+        guestName: a.guestName,
+        guestCount: a.guestCount,
+        guestsAtThisTable: a.guestsAtThisTable,
+        status: a.status,
+        allocatedBy,
+        allocatedByName,
+        createdAt: now,
+        updatedAt: now,
+      };
+      if (a.slotStartTime != null) base.slotStartTime = a.slotStartTime;
+      if (a.slotEndTime != null) base.slotEndTime = a.slotEndTime;
+      if (a.sectionId != null) base.sectionId = a.sectionId;
+      if (a.sectionName != null) base.sectionName = a.sectionName;
+      return base;
+    });
 
     try {
       await db.create.insertMany({
@@ -263,6 +346,44 @@ export async function deleteTableAllocationsHandler(req: Request, res: Response)
       if (!sanitized) {
         res.status(400).json({ message: "Invalid bookingId" });
         return;
+      }
+      if (isOfflineBookingId(sanitized)) {
+        const toDelete = (await db.read.find({
+          req,
+          connectionString,
+          collection: "table_allocations",
+          query: { bookingId: sanitized },
+          limit: 100,
+        })) as AllocationDoc[];
+        const withSlot = toDelete.filter((a) => a.slotStartTime && a.slotEndTime && a.sectionId);
+        if (withSlot.length > 0) {
+          const allocationDate = withSlot[0].allocationDate;
+          const bookingDate = new Date(allocationDate + "T00:00:00.000Z");
+          const slotKey = (st: string, et: string, sid: string) => `${st}|${et}|${sid}`;
+          const guestCountBySlot = new Map<string, number>();
+          for (const a of withSlot) {
+            const key = slotKey(a.slotStartTime!, a.slotEndTime!, a.sectionId!);
+            const cur = guestCountBySlot.get(key) ?? 0;
+            guestCountBySlot.set(key, cur + (a.guestsAtThisTable ?? 0));
+          }
+          for (const [key, guestCount] of guestCountBySlot) {
+            if (guestCount <= 0) continue;
+            const [slotStartTime, slotEndTime, sectionIdStr] = key.split("|");
+            try {
+              const sectionId = new ObjectId(sectionIdStr);
+              await slotInventory.releaseSeats({
+                req,
+                bookingDate,
+                sectionId,
+                slotStartTime,
+                slotEndTime,
+                guestCount,
+              });
+            } catch {
+              // best-effort release; continue
+            }
+          }
+        }
       }
       const result = await db.deleteOp.deleteMany({
         req,
