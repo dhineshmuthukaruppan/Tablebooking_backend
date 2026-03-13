@@ -9,7 +9,8 @@ export interface AdminListBookingsBody {
   page?: number;
   limit?: number;
   status?: AdminBookingStatus[];
-  bookingDate?: string; // YYYY-MM-DD
+  bookingDateStart?: string; // YYYY-MM-DD
+  bookingDateEnd?: string;   // YYYY-MM-DD
   name?: string;
   email?: string;
   phone?: string;
@@ -41,13 +42,27 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
       query.status = { $in: validStatuses };
     }
 
-    // bookingDate filter – single day range
-    if (typeof body.bookingDate === "string" && body.bookingDate.trim()) {
-      const dateStr = body.bookingDate.trim();
-      const start = new Date(`${dateStr}T00:00:00.000Z`);
-      const end = new Date(`${dateStr}T23:59:59.999Z`);
-      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-        query.bookingDate = { $gte: start, $lte: end };
+    // bookingDate filter – range between start and end (inclusive)
+    const startStr =
+      typeof body.bookingDateStart === "string" && body.bookingDateStart.trim()
+        ? body.bookingDateStart.trim()
+        : undefined;
+    const endStr =
+      typeof body.bookingDateEnd === "string" && body.bookingDateEnd.trim()
+        ? body.bookingDateEnd.trim()
+        : undefined;
+    if (startStr || endStr) {
+      const range: { $gte?: Date; $lte?: Date } = {};
+      if (startStr) {
+        const start = new Date(`${startStr}T00:00:00.000Z`);
+        if (!Number.isNaN(start.getTime())) range.$gte = start;
+      }
+      if (endStr) {
+        const end = new Date(`${endStr}T23:59:59.999Z`);
+        if (!Number.isNaN(end.getTime())) range.$lte = end;
+      }
+      if (Object.keys(range).length > 0) {
+        query.bookingDate = range;
       }
     }
 
