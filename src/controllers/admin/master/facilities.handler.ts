@@ -26,9 +26,15 @@ export async function getFacilitiesHandler(req: Request, res: Response): Promise
 export async function putFacilitiesHandler(req: Request, res: Response): Promise<void> {
   try {
     const body = req.body as { facilities?: unknown };
-    const facilities = Array.isArray(body.facilities)
-      ? body.facilities.map((f) => (typeof f === "string" ? f.trim() : String(f))).filter(Boolean)
-      : [];
+    const facilitiesArray = Array.isArray(body.facilities) ? body.facilities : [];
+    const facilities = facilitiesArray
+      .map((f) => (typeof f === "string" ? f.trim() : String(f)))
+      .filter((v) => v && v.trim().length > 0);
+
+    if (facilities.length === 0) {
+      res.status(400).json({ message: "At least one facility is required" });
+      return;
+    }
     const doc = await getVenueDoc(req);
     const locationTiming = doc.locationTiming ?? {};
     await db.update.updateOne({

@@ -21,6 +21,9 @@ const envSchema = z.object({
     ),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(200),
+  TWILIO_ACCOUNT_SID: z.string().default(""),
+  TWILIO_AUTH_TOKEN: z.string().default(""),
+  TWILIO_PHONE_NUMBER: z.string().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);

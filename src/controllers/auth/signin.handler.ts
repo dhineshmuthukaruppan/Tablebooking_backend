@@ -25,7 +25,17 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
       connectionString,
       collection: "users",
       query: { firebaseUid: decoded.uid },
-    }) as { _id?: import("mongodb").ObjectId; email: string; displayName?: string; role: string; isEmailVerified: boolean; isEligibleForCoupons?: boolean; createdAt?: Date } | null;
+    }) as {
+      _id?: import("mongodb").ObjectId;
+      email: string;
+      phoneNumber?: string | null;
+      displayName?: string;
+      role: string;
+      isEmailVerified: boolean;
+      isPhoneVerified?: boolean;
+      isEligibleForCoupons?: boolean;
+      createdAt?: Date;
+    } | null;
 
     if (!user) {
       res.status(403).json({
@@ -35,24 +45,45 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
     }
 
     const isEmailVerified = Boolean(decoded.email_verified);
+    const phoneNumber = decoded.phone_number ?? null;
+    const isPhoneVerified = Boolean(phoneNumber);
+
+    const updateFields: Record<string, unknown> = { updatedAt: new Date() };
+    let shouldUpdate = false;
+
     if (user.isEmailVerified !== isEmailVerified) {
+      updateFields.isEmailVerified = isEmailVerified;
+      shouldUpdate = true;
+    }
+    if (phoneNumber && user.phoneNumber !== phoneNumber) {
+      updateFields.phoneNumber = phoneNumber;
+      shouldUpdate = true;
+    }
+    if (user.isPhoneVerified !== isPhoneVerified) {
+      updateFields.isPhoneVerified = isPhoneVerified;
+      shouldUpdate = true;
+    }
+
+    if (shouldUpdate) {
       await db.update.updateOne({
         req,
         connectionString,
         collection: "users",
         query: { firebaseUid: decoded.uid },
-        update: { $set: { isEmailVerified, updatedAt: new Date() } },
+        update: { $set: updateFields },
       });
-      user = { ...user, isEmailVerified };
+      user = { ...user, ...updateFields };
     }
 
     const profile = {
       id: user._id?.toString(),
       uid: decoded.uid,
       email: user.email,
+      phoneNumber: user.phoneNumber,
       displayName: user.displayName,
       role: user.role,
       isEmailVerified: user.isEmailVerified,
+      isPhoneVerified: user.isPhoneVerified,
       isEligibleForCoupons: user.isEligibleForCoupons ?? false,
       createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : (user.createdAt as string | undefined),
     };

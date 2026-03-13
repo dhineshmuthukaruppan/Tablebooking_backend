@@ -1,10 +1,43 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
+import { logger } from "../../config/logger";
 import db from "../../databaseUtilities";
 import * as slotInventory from "../../services/slotInventory";
 import * as slotConfigService from "../../services/slotConfig";
+import {
+  sendBookingCancellationEmail,
+  sendBookingConfirmationEmail,
+} from "../../services/email/email.service";
+import { sendSMS } from "../../services/sms.service";
+import {
+  bookingCancelledSMS,
+  bookingConfirmedSMS,
+} from "../../services/smsTemplates";
 
 const GUEST_DATE_QUERY = { type: "default" } as const;
+
+function formatBookingDate(date: Date): string {
+  return date.toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function buildBookingSmsData(params: {
+  bookingId?: string;
+  bookingDate: Date;
+  startTime: string;
+  endTime: string;
+  guestCount: number;
+}): { bookingId?: string; date: string; time: string; guests: number } {
+  return {
+    bookingId: params.bookingId,
+    date: formatBookingDate(params.bookingDate),
+    time: `${params.startTime} - ${params.endTime}`,
+    guests: params.guestCount,
+  };
+}
 
 /** Start of today 00:00:00 UTC, end of today 23:59:59.999 UTC */
 function getTodayRange(): { start: Date; end: Date } {
@@ -249,15 +282,69 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       createdAt: now,
       updatedAt: now,
     };
-    await db.create.insertOne({
+    const insertResult = await db.create.insertOne({
       req,
       connectionString,
       collection: "bookings",
       payload: doc as unknown as Record<string, unknown>,
     });
+    const bookingId = insertResult?.insertedId;
+
+    const responseDoc = bookingId ? { ...doc, _id: bookingId } : doc;
+
+    logger.info("Booking created by user", {
+      bookingId: bookingId ? bookingId.toString() : null,
+      status,
+      emailTriggered: Boolean(customerEmail && status === "confirmed"),
+      smsTriggered: Boolean(customerPhone && req.user?.role === "user" && status === "confirmed"),
+    });
+
+    if (customerEmail && status === "confirmed") {
+      const bookingDateDisplay = formatBookingDate(bookingDate);
+
+      const emailPayload = {
+        customerEmail,
+        customerName,
+        bookingId: bookingId ? bookingId.toString() : "",
+        bookingDate: bookingDateDisplay,
+        startTime,
+        endTime,
+        guests: guestCount,
+        section: sectionName,
+        venueName: "The Sheesha Factory",
+        location: "RS Puram, Coimbatore",
+      };
+
+      // Fire-and-forget; do not block booking response on email dispatch.
+      void sendBookingConfirmationEmail(emailPayload).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[booking] Booking confirmation email failed", err);
+      });
+    }
+
+    if (req.user?.role === "user" && customerPhone) {
+      const smsPayload = buildBookingSmsData({
+        bookingId: bookingId ? bookingId.toString() : undefined,
+        bookingDate,
+        startTime,
+        endTime,
+        guestCount,
+      });
+
+      if (status === "confirmed") {
+        logger.info("SMS Trigger → Booking Confirmed", {
+          bookingId: bookingId ? bookingId.toString() : null,
+        });
+        void sendSMS({
+          to: customerPhone,
+          body: bookingConfirmedSMS(smsPayload),
+        });
+      }
+    }
+
     res.status(201).json({
       message: "Booking created",
-      data: doc,
+      data: responseDoc,
     });
   } catch {
     res.status(500).json({ message: "Internal server error" });
@@ -297,6 +384,10 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
     const b = booking as {
       bookingDate?: Date;
       sectionId?: ObjectId;
+      customerEmail?: string;
+      customerName?: string;
+      sectionName?: string;
+      customerPhone?: string;
       slot?: { startTime?: string; endTime?: string };
       guestCount?: number;
     };
@@ -317,6 +408,68 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
       query: { _id: new ObjectId(id), userId: new ObjectId(userId.toString()) },
       update: { $set: { status: "cancelled", updatedAt: now } },
     });
+
+    console.log("EMAIL DEBUG → status change", {
+      bookingId: id,
+      previousStatus: currentStatus,
+      newStatus: "cancelled",
+      customerEmail: b.customerEmail,
+    });
+
+    if (
+      currentStatus === "pending" &&
+      typeof b.customerEmail === "string" &&
+      b.customerEmail.trim() &&
+      typeof b.customerName === "string" &&
+      b.bookingDate &&
+      b.slot?.startTime &&
+      b.slot?.endTime &&
+      typeof b.sectionName === "string"
+    ) {
+      const emailPayload = {
+        customerEmail: b.customerEmail.trim(),
+        customerName: b.customerName,
+        bookingId: id,
+        bookingDate: formatBookingDate(b.bookingDate),
+        startTime: b.slot.startTime,
+        endTime: b.slot.endTime,
+        guests: typeof b.guestCount === "number" ? b.guestCount : 0,
+        section: b.sectionName,
+        venueName: "The Sheesha Factory",
+        location: "RS Puram, Coimbatore",
+      };
+
+      console.log("EMAIL DEBUG → cancellation payload", emailPayload);
+
+      void sendBookingCancellationEmail(emailPayload).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[booking] Booking cancellation email failed", err);
+      });
+    }
+
+    if (
+      req.user?.role === "user" &&
+      currentStatus === "pending" &&
+      typeof b.customerPhone === "string" &&
+      b.customerPhone.trim() &&
+      b.bookingDate &&
+      b.slot?.startTime &&
+      b.slot?.endTime
+    ) {
+      logger.info("SMS Trigger → Booking Cancelled", { bookingId: id });
+      void sendSMS({
+        to: b.customerPhone.trim(),
+        body: bookingCancelledSMS(
+          buildBookingSmsData({
+            bookingDate: b.bookingDate,
+            startTime: b.slot.startTime,
+            endTime: b.slot.endTime,
+            guestCount: typeof b.guestCount === "number" ? b.guestCount : 0,
+          })
+        ),
+      });
+    }
+
     res.status(200).json({ message: "Booking cancelled", data: { _id: id, status: "cancelled" } });
   } catch {
     res.status(500).json({ message: "Internal server error" });

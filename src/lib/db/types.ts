@@ -7,6 +7,9 @@ export interface UserDocument {
   displayName?: string;
   role: Role;
   isEmailVerified: boolean;
+  phoneNumber?: string | null;
+  isPhoneVerified: boolean;
+  authProvider?: "email" | "phone";
   isEligibleForCoupons?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
