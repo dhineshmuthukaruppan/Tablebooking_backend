@@ -26,3 +26,47 @@ Stores user profiles synced from Firebase Authentication. One document per user,
 
 - `firebaseUid` (unique)
 - `email` (unique)
+
+### `menu_categories`
+
+Menu categories (e.g. Breakfast, Soups) for the restaurant menu. Slug is used in public URLs.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `_id` | ObjectId | (auto) | Document ID |
+| `name` | string | yes | Display name (e.g. "Breakfast", "Soups") |
+| `slug` | string | yes | URL-safe unique identifier |
+| `coverImage` | string | no | GCS object name; served via `/api/v1/photos/serve?object=...` |
+| `order` | number | yes | Display order (lower first) |
+| `isActive` | boolean | yes | Default true; if false, hide from public menu |
+| `createdAt` | Date | no | Set on insert |
+| `updatedAt` | Date | no | Set on update |
+
+**Indexes:**
+
+- `slug` (unique)
+- `order` (asc)
+
+### `menu_products`
+
+Dishes/products within a category. Slug is used in public URLs.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `_id` | ObjectId | (auto) | Document ID |
+| `name` | string | yes | Dish name |
+| `slug` | string | yes | URL-safe; unique globally |
+| `categoryId` | ObjectId | yes | Reference to `menu_categories._id` |
+| `price` | number | yes | Numeric price |
+| `currency` | string | yes | e.g. "AED", "INR" |
+| `image` | string | no | GCS object name for dish image |
+| `description` | string | no | Text description |
+| `tags` | string[] | no | e.g. `["veg"]`, `["non-veg"]`, `["spicy"]` |
+| `isAvailable` | boolean | yes | Default true |
+| `createdAt` | Date | no | Set on insert |
+| `updatedAt` | Date | no | Set on update |
+
+**Indexes:**
+
+- `slug` (unique)
+- `categoryId` (for listing by category)

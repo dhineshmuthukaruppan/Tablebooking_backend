@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import db from "../../databaseUtilities";
+import type { UserDocument } from "../../lib/db/types";
 import { verifyIdToken } from "../../lib/auth/verifyFirebaseToken";
 
 export interface SigninBody {
@@ -25,21 +26,18 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
       connectionString,
       collection: "users",
       query: { firebaseUid: decoded.uid },
-    }) as {
-      _id?: import("mongodb").ObjectId;
-      email: string;
-      phoneNumber?: string | null;
-      displayName?: string;
-      role: string;
-      isEmailVerified: boolean;
-      isPhoneVerified?: boolean;
-      isEligibleForCoupons?: boolean;
-      createdAt?: Date;
-    } | null;
+    }) as UserDocument | null;
 
     if (!user) {
       res.status(403).json({
         message: "User not found. Please register first.",
+      });
+      return;
+    }
+
+    if (user.status === "inactive") {
+      res.status(403).json({
+        message: "You are inactive. Please contact admin to login.",
       });
       return;
     }
@@ -73,6 +71,13 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
         update: { $set: updateFields },
       });
       user = { ...user, ...updateFields };
+    }
+
+    if (!user.isEmailVerified) {
+      res.status(403).json({
+        message: "Please verify the email to sign in.",
+      });
+      return;
     }
 
     const profile = {

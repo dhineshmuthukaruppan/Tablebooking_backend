@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Auth & Verification",
-    "description": "Table Booking Backend – Auth and admin user endpoints. Set `baseUrl` (e.g. http://localhost:5001/api/v1) and `bearerToken` (Firebase ID token from client after login).",
+    "name": "Auth & User Management – Table Booking",
+    "description": "Auth (register/signin/me) and admin user management endpoints. Set `baseUrl` (e.g. http://localhost:5001/api/v1) and `bearerToken` (Firebase ID token from client after login).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -13,6 +13,52 @@
       "name": "Auth",
       "item": [
         {
+          "name": "Register (public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"{{firebaseIdToken}}\",\n  \"displayName\": \"John Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "POST /auth/register — Public registration. Use Firebase ID token from createUserWithEmailAndPassword."
+          }
+        },
+        {
+          "name": "Signin (public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"{{firebaseIdToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signin",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "signin"]
+            },
+            "description": "POST /auth/signin — Sign in using Firebase ID token. Returns profile (role, isEmailVerified, etc.)."
+          }
+        },
+        {
           "name": "Get current user (me)",
           "request": {
             "method": "GET",
@@ -23,17 +69,21 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/auth/me",
-            "description": "Returns the authenticated user profile (uid, email, role, isEmailVerified, isEligibleForCoupons). Obtain bearerToken from Firebase: after signInWithEmailAndPassword, call user.getIdToken()."
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "GET /auth/me — Returns the authenticated user profile (id, uid, email, role, isEmailVerified, isEligibleForCoupons)."
           }
         }
       ]
     },
     {
-      "name": "Admin – Users",
+      "name": "User Management (Admin)",
       "item": [
         {
-          "name": "List users",
+          "name": "List users (GET with query)",
           "request": {
             "method": "GET",
             "header": [
@@ -44,22 +94,78 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/admin/users?page=1&limit=20",
+              "raw": "{{baseUrl}}/usermanagement/users?page=1&limit=20&role=user&status=active&isEmailVerified=true",
               "host": ["{{baseUrl}}"],
-              "path": ["admin", "users"],
+              "path": ["usermanagement", "users"],
               "query": [
                 { "key": "page", "value": "1" },
                 { "key": "limit", "value": "20" },
-                { "key": "role", "value": "user", "disabled": true },
-                { "key": "isEmailVerified", "value": "true", "disabled": true },
-                { "key": "isEligibleForCoupons", "value": "false", "disabled": true }
+                { "key": "role", "value": "user" },
+                { "key": "status", "value": "active" },
+                { "key": "isEmailVerified", "value": "true" }
               ]
             },
-            "description": "Paginated list of users. Requires admin role. Query params: page, limit, role, isEmailVerified, isEligibleForCoupons."
+            "description": "GET /usermanagement/users — Paginated list of users with optional filters. Requires admin role."
           }
         },
         {
-          "name": "Update user (role / isEligibleForCoupons)",
+          "name": "List users (POST with body filters)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"page\": 1,\n  \"limit\": 25,\n  \"role\": [\"user\", \"staff\", \"admin\"],\n  \"status\": [\"active\", \"inactive\"],\n  \"isEmailVerified\": \"true\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usermanagement/users/list",
+              "host": ["{{baseUrl}}"],
+              "path": ["usermanagement", "users", "list"]
+            },
+            "description": "POST /usermanagement/users/list — List users with filters in request body. Requires admin role."
+          }
+        },
+        {
+          "name": "Add user (admin creates Firebase-linked user)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"{{newUserFirebaseIdToken}}\",\n  \"username\": \"New Staff User\",\n  \"mobile\": \"9876543210\",\n  \"role\": \"staff\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usermanagement/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["usermanagement", "users"]
+            },
+            "description": "POST /usermanagement/users — Admin adds a user by sending Firebase idToken plus profile fields. Backend upserts MongoDB user."
+          }
+        },
+        {
+          "name": "Update user (username / role / status)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -76,10 +182,42 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"role\": \"admin\",\n  \"isEligibleForCoupons\": true\n}"
+              "raw": "{\n  \"username\": \"Updated User Name\",\n  \"role\": \"admin\",\n  \"status\": \"active\"\n}"
             },
-            "url": "{{baseUrl}}/admin/users/:id",
-            "description": "Update a user's role and/or isEligibleForCoupons. Requires admin role. Replace :id with the user's MongoDB _id."
+            "url": {
+              "raw": "{{baseUrl}}/usermanagement/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["usermanagement", "users", ":id"]
+            },
+            "description": "PATCH /usermanagement/users/:id — Update displayName, role and/or status. Replace :id with user _id."
+          }
+        },
+        {
+          "name": "Set user status (soft delete / reactivate)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"inactive\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usermanagement/users/:id/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["usermanagement", "users", ":id", "status"]
+            },
+            "description": "PATCH /usermanagement/users/:id/status — Set user status to active or inactive (soft delete)."
           }
         }
       ]

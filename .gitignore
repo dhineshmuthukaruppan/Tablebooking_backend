@@ -10,7 +10,7 @@ config/secrets/
 **/*gcs*.json
 **/erp-one-india-*.json
 
-# # Backend secrets folder – ignore all contents except .gitkeep and README
-# secrets/*
-# !secrets/.gitkeep
-# !secrets/README.md
+# Backend secrets folder – ignore all contents except .gitkeep and README
+secrets/*
+!secrets/.gitkeep
+!secrets/README.md

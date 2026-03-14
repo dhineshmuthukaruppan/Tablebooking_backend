@@ -1,0 +1,632 @@
+{
+  "info": {
+    "name": "Admin – Table Booking",
+    "description": "Admin-facing APIs for Table Booking Backend. Set `baseUrl` (e.g. http://localhost:5001/api/v1) and `bearerToken` (Firebase ID token from client after login).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5001/api/v1" },
+    { "key": "bearerToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Bookings",
+          "item": [
+            {
+              "name": "List bookings (admin/staff, paginated + filters)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"page\": 1,\n  \"limit\": 25,\n  \"status\": [\"pending\", \"confirmed\", \"completed\"],\n  \"bookingDateStart\": \"2025-03-01\",\n  \"bookingDateEnd\": \"2025-03-31\",\n  \"name\": \"john\",\n  \"email\": \"john@example.com\",\n  \"phone\": \"9876\",\n  \"guestCount\": 4,\n  \"section\": [\"Indoor\", \"Rooftop\"],\n  \"feedback\": \"required\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/bookings/list",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "bookings", "list"]
+                },
+                "description": "POST /admin/bookings/list — Admin/staff list bookings with server-side pagination and filters."
+              }
+            },
+            {
+              "name": "Update booking (status / billing / payment / feedbackRequired)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"completed\",\n  \"billing\": {\n    \"actualAmount\": 2000,\n    \"discountAmount\": 200,\n    \"finalAmount\": 1800\n  },\n  \"payment\": {\n    \"status\": \"paid\",\n    \"method\": \"cash\",\n    \"stripePaymentIntentId\": null,\n    \"paidAt\": \"2025-03-12T19:45:00.000Z\"\n  },\n  \"feedbackRequired\": true\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/bookings/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "bookings", ":id"]
+                },
+                "description": "PATCH /admin/bookings/:id — Update booking status, billing, payment and/or feedbackRequired. Replace :id with booking _id."
+              }
+            },
+            {
+              "name": "Walk-in booking payment (admin/staff)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerName\": \"Walk-in Customer\",\n  \"customerPhone\": \"9876543210\",\n  \"guestCount\": 2,\n  \"sectionName\": \"Indoor\",\n  \"bookingDate\": \"2025-03-12\",\n  \"billing\": {\n    \"actualAmount\": 1500,\n    \"discountAmount\": 0,\n    \"finalAmount\": 1500\n  },\n  \"payment\": {\n    \"status\": \"paid\",\n    \"method\": \"cash\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/bookings/walk-in",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "bookings", "walk-in"]
+                },
+                "description": "POST /admin/bookings/walk-in — Create/update a booking with walk-in payment details."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Master",
+          "item": [
+            {
+              "name": "Guest dates – get config",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/guest-dates",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "guest-dates"]
+                },
+                "description": "GET /admin/master/guest-dates — Fetch guest-dates configuration."
+              }
+            },
+            {
+              "name": "Guest dates – update config",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"maxGuestsPerDay\": 100,\n  \"blockedDates\": [\n    \"2025-12-25\",\n    \"2026-01-01\"\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/guest-dates",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "guest-dates"]
+                },
+                "description": "PUT /admin/master/guest-dates — Update guest-dates configuration. Body shape should match backend config."
+              }
+            },
+            {
+              "name": "Meal-time – list",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/meal-time",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "meal-time"]
+                },
+                "description": "GET /admin/master/meal-time — List meal-time sections (e.g. Breakfast, Lunch, Dinner)."
+              }
+            },
+            {
+              "name": "Meal-time – get by id",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/meal-time/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "meal-time", ":id"]
+                },
+                "description": "GET /admin/master/meal-time/:id — Get a single meal-time config by id."
+              }
+            },
+            {
+              "name": "Meal-time – create",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Dinner\",\n  \"startTime\": \"19:00\",\n  \"endTime\": \"23:00\",\n  \"isActive\": true\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/meal-time",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "meal-time"]
+                },
+                "description": "POST /admin/master/meal-time — Create a new meal-time section."
+              }
+            },
+            {
+              "name": "Meal-time – update",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Updated Dinner\",\n  \"startTime\": \"20:00\",\n  \"endTime\": \"23:30\",\n  \"isActive\": true\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/meal-time/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "meal-time", ":id"]
+                },
+                "description": "PUT /admin/master/meal-time/:id — Update an existing meal-time section."
+              }
+            },
+            {
+              "name": "Meal-time – delete",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/meal-time/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "meal-time", ":id"]
+                },
+                "description": "DELETE /admin/master/meal-time/:id — Delete a meal-time section."
+              }
+            },
+            {
+              "name": "Location & timing – get",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/location-timing",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "location-timing"]
+                },
+                "description": "GET /admin/master/location-timing — Fetch venue location & timing configuration."
+              }
+            },
+            {
+              "name": "Location & timing – update",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"address\": \"123 Main Street, Chennai\",\n  \"city\": \"Chennai\",\n  \"openingTime\": \"10:00\",\n  \"closingTime\": \"23:00\",\n  \"weeklyOff\": [\"Monday\"]\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/location-timing",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "location-timing"]
+                },
+                "description": "PUT /admin/master/location-timing — Update venue location & timing configuration."
+              }
+            },
+            {
+              "name": "Facilities – get",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/facilities",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "facilities"]
+                },
+                "description": "GET /admin/master/facilities — Fetch facilities configuration."
+              }
+            },
+            {
+              "name": "Facilities – update",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"facilities\": [\n    {\n      \"name\": \"Wi-Fi\",\n      \"isActive\": true\n    },\n    {\n      \"name\": \"Parking\",\n      \"isActive\": true\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/master/facilities",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "master", "facilities"]
+                },
+                "description": "PUT /admin/master/facilities — Update facilities configuration."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Menu",
+          "item": [
+            {
+              "name": "Categories – list (admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/menu/categories",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "menu", "categories"]
+                },
+                "description": "GET /admin/menu/categories — List menu categories for admin."
+              }
+            },
+            {
+              "name": "Categories – create (multipart)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "name", "value": "Starters", "type": "text" },
+                    { "key": "slug", "value": "starters", "type": "text" },
+                    { "key": "description", "value": "Tasty starter dishes", "type": "text" },
+                    { "key": "isActive", "value": "true", "type": "text" },
+                    { "key": "coverImage", "type": "file", "src": [] }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/menu/categories",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "menu", "categories"]
+                },
+                "description": "POST /admin/menu/categories — Create a menu category (multipart form-data with optional coverImage)."
+              }
+            },
+            {
+              "name": "Categories – update (multipart)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "name", "value": "Updated Starters", "type": "text" },
+                    { "key": "slug", "value": "updated-starters", "type": "text" },
+                    { "key": "description", "value": "Updated description", "type": "text" },
+                    { "key": "isActive", "value": "true", "type": "text" },
+                    { "key": "coverImage", "type": "file", "src": [], "disabled": true }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/menu/categories/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "menu", "categories", ":id"]
+                },
+                "description": "PATCH /admin/menu/categories/:id — Update a menu category. Replace :id with category _id."
+              }
+            },
+            {
+              "name": "Products – list (admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/menu/products",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "menu", "products"]
+                },
+                "description": "GET /admin/menu/products — List menu products for admin."
+              }
+            },
+            {
+              "name": "Products – create (multipart)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "name", "value": "Paneer Tikka", "type": "text" },
+                    { "key": "slug", "value": "paneer-tikka", "type": "text" },
+                    { "key": "categoryId", "value": "{{categoryId}}", "type": "text" },
+                    { "key": "price", "value": "250", "type": "text" },
+                    { "key": "isActive", "value": "true", "type": "text" },
+                    { "key": "image", "type": "file", "src": [] }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/menu/products",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "menu", "products"]
+                },
+                "description": "POST /admin/menu/products — Create a menu product (multipart form-data with image)."
+              }
+            },
+            {
+              "name": "Products – update (multipart)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "name", "value": "Updated Paneer Tikka", "type": "text" },
+                    { "key": "slug", "value": "updated-paneer-tikka", "type": "text" },
+                    { "key": "categoryId", "value": "{{categoryId}}", "type": "text" },
+                    { "key": "price", "value": "275", "type": "text" },
+                    { "key": "isActive", "value": "true", "type": "text" },
+                    { "key": "image", "type": "file", "src": [], "disabled": true }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/menu/products/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "menu", "products", ":id"]
+                },
+                "description": "PATCH /admin/menu/products/:id — Update a menu product. Replace :id with product _id."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Feedback",
+          "item": [
+            {
+              "name": "List feedback (admin/staff)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "feedback"]
+                },
+                "description": "GET /admin/feedback — List feedback items for admin/staff."
+              }
+            },
+            {
+              "name": "Update feedback (admin/staff)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"resolved\",\n  \"adminNotes\": \"Called the customer and resolved the issue.\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "feedback", ":id"]
+                },
+                "description": "PATCH /admin/feedback/:id — Update feedback status/notes. Replace :id with feedback _id."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dashboard & Jobs",
+          "item": [
+            {
+              "name": "Dashboard summary",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/dashboard",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "dashboard"]
+                },
+                "description": "GET /admin/dashboard — Admin/staff dashboard metrics."
+              }
+            },
+            {
+              "name": "Cleanup slot inventory job",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"dryRun\": true\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/jobs/cleanup-slot-inventory",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "jobs", "cleanup-slot-inventory"]
+                },
+                "description": "POST /admin/jobs/cleanup-slot-inventory — Run cleanup for slot inventory. Use dryRun=true for safe testing."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

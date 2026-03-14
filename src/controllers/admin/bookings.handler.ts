@@ -2,6 +2,181 @@ import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
 
+const ADMIN_BOOKING_STATUSES = ["pending", "confirmed", "completed", "noshow", "cancelled"] as const;
+type AdminBookingStatus = (typeof ADMIN_BOOKING_STATUSES)[number];
+
+export interface AdminListBookingsBody {
+  page?: number;
+  limit?: number;
+  status?: AdminBookingStatus[];
+  bookingDateStart?: string; // YYYY-MM-DD
+  bookingDateEnd?: string;   // YYYY-MM-DD
+  name?: string;
+  email?: string;
+  phone?: string;
+  guestCount?: number;
+  section?: string[];
+  feedback?: "given" | "required";
+  /** Filter by slot (24h "HH:mm"). Booking has slot: { startTime, endTime }. */
+  slots?: { startTime: string; endTime: string }[];
+}
+
+/**
+ * POST /admin/bookings/list — admin/staff list bookings with filters + pagination.
+ * Server-side pagination; filters on status, bookingDate (single day), name, email, phone,
+ * guestCount, sectionName, feedback (given/required).
+ */
+export async function listAdminBookingsHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const body = (req.body as AdminListBookingsBody) ?? {};
+    const page = Math.max(1, Number(body.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(body.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const connectionString = db.constants.connectionStrings.tableBooking;
+
+    const query: Record<string, unknown> = {};
+
+    // Status filter
+    const statusArr = Array.isArray(body.status) ? body.status : [];
+    const validStatuses = statusArr.filter((s) => ADMIN_BOOKING_STATUSES.includes(s as AdminBookingStatus));
+    if (validStatuses.length > 0) {
+      query.status = { $in: validStatuses };
+    }
+
+    // bookingDate filter – range between start and end (inclusive)
+    const startStr =
+      typeof body.bookingDateStart === "string" && body.bookingDateStart.trim()
+        ? body.bookingDateStart.trim()
+        : undefined;
+    const endStr =
+      typeof body.bookingDateEnd === "string" && body.bookingDateEnd.trim()
+        ? body.bookingDateEnd.trim()
+        : undefined;
+    if (startStr || endStr) {
+      const range: { $gte?: Date; $lte?: Date } = {};
+      if (startStr) {
+        const start = new Date(`${startStr}T00:00:00.000Z`);
+        if (!Number.isNaN(start.getTime())) range.$gte = start;
+      }
+      if (endStr) {
+        const end = new Date(`${endStr}T23:59:59.999Z`);
+        if (!Number.isNaN(end.getTime())) range.$lte = end;
+      }
+      if (Object.keys(range).length > 0) {
+        query.bookingDate = range;
+      }
+    }
+
+    // Text filters
+    if (typeof body.name === "string" && body.name.trim()) {
+      query.customerName = { $regex: body.name.trim(), $options: "i" };
+    }
+    if (typeof body.email === "string" && body.email.trim()) {
+      query.customerEmail = { $regex: body.email.trim(), $options: "i" };
+    }
+    if (typeof body.phone === "string" && body.phone.trim()) {
+      query.customerPhone = { $regex: body.phone.trim(), $options: "i" };
+    }
+
+    // Guest count (exact match)
+    if (typeof body.guestCount === "number" && Number.isFinite(body.guestCount) && body.guestCount > 0) {
+      query.guestCount = body.guestCount;
+    }
+
+    // Section filter
+    const sectionsArr = Array.isArray(body.section) ? body.section.filter((s) => typeof s === "string" && s.trim()) : [];
+    if (sectionsArr.length > 0) {
+      query.sectionName = { $in: sectionsArr };
+    }
+
+    // Feedback filter
+    if (body.feedback === "given") {
+      query.feedback = { $ne: null };
+    } else if (body.feedback === "required") {
+      query.feedbackRequired = true;
+    }
+
+    // Slot filter: booking.slot = { startTime: "07:30", endTime: "08:00" } (24h)
+    const slotsArr = Array.isArray(body.slots) ? body.slots : [];
+    const validSlots = slotsArr.filter(
+      (s) =>
+        typeof s?.startTime === "string" &&
+        s.startTime.trim() !== "" &&
+        typeof s?.endTime === "string" &&
+        s.endTime.trim() !== ""
+    );
+    if (validSlots.length > 0) {
+      query.$or = validSlots.map((s) => ({
+        "slot.startTime": s.startTime.trim(),
+        "slot.endTime": s.endTime.trim(),
+      }));
+    }
+
+    const projection = {
+      customerName: 1,
+      customerEmail: 1,
+      customerPhone: 1,
+      bookingDate: 1,
+      sectionName: 1,
+      slot: 1,
+      guestCount: 1,
+      status: 1,
+      payment: 1,
+      feedback: 1,
+      feedbackRequired: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const [items, total, sectionsDocs] = await Promise.all([
+      db.read.find({
+        req,
+        connectionString,
+        collection: "bookings",
+        query,
+        projection,
+        sort: { createdAt: -1 },
+        skip,
+        limit,
+      }),
+      db.read.count({
+        req,
+        connectionString,
+        collection: "bookings",
+        query,
+      }),
+      db.read.find({
+        req,
+        connectionString,
+        collection: "bookings",
+        query: {}, // all sections from all bookings
+        projection: { sectionName: 1 },
+        limit: 5000,
+      }),
+    ]);
+
+    const sections = Array.from(
+      new Set(
+        (sectionsDocs as { sectionName?: string }[]).map((d) => (typeof d.sectionName === "string" ? d.sectionName : "")).filter(Boolean)
+      )
+    );
+
+    res.status(200).json({
+      message: "Admin bookings list",
+      data: {
+        items: items ?? [],
+        total: total ?? 0,
+        page,
+        limit,
+        sections,
+      },
+    });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 /**
  * PATCH /admin/bookings/:id — admin/staff update booking: status, billing, payment, feedbackRequired.
  * Used when: 1) marking booking as "completed" on table assign, 2) submitting payment.
@@ -43,9 +218,9 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
         return;
       }
       updates.status = body.status;
-      updates.payment = {
-        status: body.status === "completed" ? "pending" : null,
-      };
+      updates.feedbackRequired = body.status === "completed";
+      (updates as Record<string, unknown>)["payment.status"] =
+        body.status === "completed" ? "pending" : null;
     }
 
     if (body.billing !== undefined) {
@@ -64,15 +239,24 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
 
     if (body.payment !== undefined) {
       const method = body.payment.method;
-      const isOffline = method === "cash" || method === "card";
-      const paymentStatus = isOffline ? "paid" : (body.payment.status ?? "pending");
-      updates.payment = {
-        status: paymentStatus,
-        method: method ?? null,
-        initiatedByStaff: staffId,
-        stripePaymentIntentId: body.payment.stripePaymentIntentId ?? null,
-        paidAt: isOffline ? now : (body.payment.paidAt ?? null),
-      };
+      const paymentStatus = body.payment.status;
+      const hasMethod = method !== undefined;
+      const hasStatus = paymentStatus !== undefined;
+      if (hasMethod || hasStatus) {
+        if (hasStatus) {
+          (updates as Record<string, unknown>)["payment.status"] =
+            paymentStatus === "paid" ? "paid" : "pending";
+        }
+        if (hasMethod) {
+          const isOffline = method === "cash" || method === "card";
+          (updates as Record<string, unknown>)["payment.method"] = method ?? null;
+          (updates as Record<string, unknown>)["payment.initiatedByStaff"] = staffId;
+          (updates as Record<string, unknown>)["payment.stripePaymentIntentId"] =
+            body.payment.stripePaymentIntentId ?? null;
+          (updates as Record<string, unknown>)["payment.paidAt"] =
+            isOffline ? now : (body.payment.paidAt ?? null);
+        }
+      }
     }
 
     if (body.feedbackRequired !== undefined) {

@@ -61,6 +61,7 @@ export async function registerHandler(req: Request, res: Response): Promise<void
         phoneNumber: normalizedPhone,
         ...(displayNameTrimmed && { displayName: displayNameTrimmed }),
         role: email==="mdhas0304@gmail.com"?"admin":"user",
+        status: "active",
         isEmailVerified,
         isPhoneVerified,
         authProvider,
