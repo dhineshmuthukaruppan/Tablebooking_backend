@@ -5,6 +5,7 @@ import db from "../../databaseUtilities";
 import * as slotInventory from "../../services/slotInventory";
 import * as slotConfigService from "../../services/slotConfig";
 import {
+  sendAdminBookingCancellationEmail,
   sendBookingCancellationEmail,
   sendBookingConfirmationEmail,
 } from "../../services/email/email.service";
@@ -304,6 +305,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
 
       const emailPayload = {
         customerEmail,
+        customerId: user.id.toString(),
         customerName,
         bookingId: bookingId ? bookingId.toString() : "",
         bookingDate: bookingDateDisplay,
@@ -428,6 +430,7 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
     ) {
       const emailPayload = {
         customerEmail: b.customerEmail.trim(),
+        customerId: userId.toString(),
         customerName: b.customerName,
         bookingId: id,
         bookingDate: formatBookingDate(b.bookingDate),
@@ -444,6 +447,11 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
       void sendBookingCancellationEmail(emailPayload).catch((err) => {
         // eslint-disable-next-line no-console
         console.error("[booking] Booking cancellation email failed", err);
+      });
+
+      void sendAdminBookingCancellationEmail(req, emailPayload).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[booking] Admin booking cancellation email failed", err);
       });
     }
 

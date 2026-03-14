@@ -1,99 +1,94 @@
 import type { Request, Response } from "express";
-import db from "../../../databaseUtilities";
-
-/** Single config document in guest_date collection. */
-const CONFIG_QUERY = { type: "default" } as const;
+import {
+  getGuestDatesConfig,
+  isGuestDatesConfigError,
+  updateGuestDatesConfig,
+} from "../../../services/admin/guestDates.service";
 
 export async function getGuestDatesConfigHandler(req: Request, res: Response): Promise<void> {
   try {
-    const connectionString = db.constants.connectionStrings.tableBooking;
-
-    const doc = await db.read.findOne({
-      req,
-      connectionString,
-      collection: "guest_date",
-      query: CONFIG_QUERY,
-    }) as { maxGuestCount?: number; maxDaysCount?: number; allowBookingWhenSlotFull?: boolean } | null;
-
-    const maxGuestCount = doc?.maxGuestCount ?? 0;
-    const maxDaysCount = doc?.maxDaysCount ?? 0;
-    const allowBookingWhenSlotFull = doc?.allowBookingWhenSlotFull ?? false;
-
+    const config = await getGuestDatesConfig(req);
     res.status(200).json({
       message: "Guest and dates config",
-      data: { maxGuestCount, maxDaysCount, allowBookingWhenSlotFull },
+      data: config,
     });
-  } catch {
+  } catch (error) {
+    if (isGuestDatesConfigError(error)) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+
     res.status(500).json({ message: "Internal server error" });
   }
 }
 
 export async function updateGuestDatesConfigHandler(req: Request, res: Response): Promise<void> {
   try {
-    const body = req.body as { maxGuestCount?: number; maxDaysCount?: number; allowBookingWhenSlotFull?: boolean };
+    const body = req.body as {
+      maxGuestCount?: number;
+      maxDaysCount?: number;
+      allowBookingWhenSlotFull?: boolean;
+      adminEmail?: string | null;
+    };
     const maxGuestCount = typeof body.maxGuestCount === "number" ? body.maxGuestCount : undefined;
     const maxDaysCount = typeof body.maxDaysCount === "number" ? body.maxDaysCount : undefined;
     const allowBookingWhenSlotFull =
       typeof body.allowBookingWhenSlotFull === "boolean" ? body.allowBookingWhenSlotFull : undefined;
+    const adminEmail =
+      typeof body.adminEmail === "string" || body.adminEmail === null
+        ? body.adminEmail
+        : undefined;
 
-    if (maxGuestCount === undefined && maxDaysCount === undefined && allowBookingWhenSlotFull === undefined) {
-      res.status(400).json({ message: "Provide maxGuestCount, maxDaysCount and/or allowBookingWhenSlotFull" });
-      return;
-    }
-
-    const connectionString = db.constants.connectionStrings.tableBooking;
-    const now = new Date();
-    const updateFields: Record<string, unknown> = { updatedAt: now };
-    if (maxGuestCount !== undefined) updateFields.maxGuestCount = maxGuestCount;
-    if (maxDaysCount !== undefined) updateFields.maxDaysCount = maxDaysCount;
-    if (allowBookingWhenSlotFull !== undefined) updateFields.allowBookingWhenSlotFull = allowBookingWhenSlotFull;
-
-    const existing = await db.read.findOne({
-      req,
-      connectionString,
-      collection: "guest_date",
-      query: CONFIG_QUERY,
+    const config = await updateGuestDatesConfig(req, {
+      maxGuestCount,
+      maxDaysCount,
+      allowBookingWhenSlotFull,
+      adminEmail,
     });
-
-    if (!existing) {
-      await db.create.insertOne({
-        req,
-        connectionString,
-        collection: "guest_date",
-        payload: {
-          type: "default",
-          maxGuestCount: maxGuestCount ?? 0,
-          maxDaysCount: maxDaysCount ?? 0,
-          allowBookingWhenSlotFull: allowBookingWhenSlotFull ?? false,
-          updatedAt: now,
-        },
-      });
-    } else {
-      await db.update.updateOne({
-        req,
-        connectionString,
-        collection: "guest_date",
-        query: CONFIG_QUERY,
-        update: { $set: updateFields },
-      });
-    }
-
-    const doc = await db.read.findOne({
-      req,
-      connectionString,
-      collection: "guest_date",
-      query: CONFIG_QUERY,
-    }) as { maxGuestCount?: number; maxDaysCount?: number; allowBookingWhenSlotFull?: boolean } | null;
 
     res.status(200).json({
       message: "Guest and dates config updated",
-      data: {
-        maxGuestCount: doc?.maxGuestCount ?? 0,
-        maxDaysCount: doc?.maxDaysCount ?? 0,
-        allowBookingWhenSlotFull: doc?.allowBookingWhenSlotFull ?? false,
-      },
+      data: config,
     });
-  } catch {
+  } catch (error) {
+    if (isGuestDatesConfigError(error)) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function updateGuestDatesAdminEmailHandler(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const body = req.body as { adminEmail?: string | null };
+
+    if (!Object.prototype.hasOwnProperty.call(body, "adminEmail")) {
+      res.status(400).json({ message: "Provide adminEmail in request body." });
+      return;
+    }
+
+    const config = await updateGuestDatesConfig(req, {
+      adminEmail:
+        typeof body.adminEmail === "string" || body.adminEmail === null
+          ? body.adminEmail
+          : null,
+    });
+
+    res.status(200).json({
+      message: "Admin contact email updated",
+      data: config,
+    });
+  } catch (error) {
+    if (isGuestDatesConfigError(error)) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+
     res.status(500).json({ message: "Internal server error" });
   }
 }

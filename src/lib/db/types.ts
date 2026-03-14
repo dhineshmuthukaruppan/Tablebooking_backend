@@ -5,10 +5,11 @@ export type UserStatus = "active" | "inactive";
 export interface UserDocument {
   _id?: import("mongodb").ObjectId;
   firebaseUid: string;
-  email: string;
+  email?: string | null;
   displayName?: string;
   mobile?: string;
   role: Role;
+  isSystemAdmin?: boolean;
   status?: UserStatus;
   isEmailVerified: boolean;
   phoneNumber?: string | null;
@@ -17,4 +18,5 @@ export interface UserDocument {
   isEligibleForCoupons?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
+  
 }
