@@ -5,6 +5,7 @@
 import * as mongodbRead from "./mongodb_read";
 import * as mongodbCreate from "./mongodb_create";
 import * as mongodbUpdate from "./mongodb_update";
+import * as mongodbDelete from "./mongodb_delete";
 import { dbTables, connectionStrings } from "./constants/databaseConstants";
 
 export const read = {
@@ -24,9 +25,14 @@ export const update = {
   findOneAndUpdate: mongodbUpdate.findOneAndUpdate,
 };
 
+export const deleteOp = {
+  deleteOne: mongodbDelete.deleteOne,
+  deleteMany: mongodbDelete.deleteMany,
+};
+
 export const constants = {
   dbTables,
   connectionStrings,
 };
 
-export default { read, create, update, constants };
+export default { read, create, update, deleteOp, constants };

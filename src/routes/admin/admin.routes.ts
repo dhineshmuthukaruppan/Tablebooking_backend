@@ -32,6 +32,31 @@ router.post(
 );
 
 router.get(
+  "/table-allocations",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.getTableAllocationsHandler
+);
+router.post(
+  "/table-allocations",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.postTableAllocationsHandler
+);
+router.delete(
+  "/table-allocations",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.deleteTableAllocationsHandler
+);
+router.delete(
+  "/table-allocations/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.deleteTableAllocationsHandler
+);
+
+router.get(
   "/dashboard",
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),

@@ -5,6 +5,11 @@ export {
   patchBookingByAdminHandler,
   postWalkInPaymentHandler,
 } from "./bookings.handler";
+export {
+  getTableAllocationsHandler,
+  postTableAllocationsHandler,
+  deleteTableAllocationsHandler,
+} from "./allocations.handler";
 export { getAdminFeedbackHandler, patchAdminFeedbackHandler } from "./feedback.handler";
 export { cleanupSlotInventoryHandler } from "./jobs.handler";
 export {

@@ -12,8 +12,10 @@ export const dbTables = {
   venue_config: "venue_config",
   slot_inventory: "slot_inventory",
   venue_photos: "venue_photos",
+  table_allocations: "table_allocations",
   menu_categories: "menu_categories",
   menu_products: "menu_products",
+  counters: "counters",
 } as const;
 
 export const connectionStrings = {
