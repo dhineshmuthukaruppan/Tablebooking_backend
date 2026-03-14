@@ -11,7 +11,7 @@ export function getUsersCollection(db: Db) {
 export async function ensureUsersIndexes(db: Db): Promise<void> {
   const coll = getUsersCollection(db);
   await coll.createIndex({ firebaseUid: 1 }, { unique: true });
-  await coll.createIndex({ email: 1 }, { unique: true });
+  await coll.createIndex({ email: 1 }, { unique: true, sparse: true });
 }
 
 export async function ensureBookingsIndexes(db: Db): Promise<void> {
