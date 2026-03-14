@@ -22,6 +22,82 @@ export interface AdminListBookingsBody {
   slots?: { startTime: string; endTime: string }[];
 }
 
+/** Build MongoDB query from admin list/export body (shared by list and export). */
+function buildAdminBookingsQuery(body: AdminListBookingsBody): Record<string, unknown> {
+  const query: Record<string, unknown> = {};
+
+  const statusArr = Array.isArray(body.status) ? body.status : [];
+  const validStatuses = statusArr.filter((s) => ADMIN_BOOKING_STATUSES.includes(s as AdminBookingStatus));
+  if (validStatuses.length > 0) {
+    query.status = { $in: validStatuses };
+  }
+
+  const startStr =
+    typeof body.bookingDateStart === "string" && body.bookingDateStart.trim()
+      ? body.bookingDateStart.trim()
+      : undefined;
+  const endStr =
+    typeof body.bookingDateEnd === "string" && body.bookingDateEnd.trim()
+      ? body.bookingDateEnd.trim()
+      : undefined;
+  if (startStr || endStr) {
+    const range: { $gte?: Date; $lte?: Date } = {};
+    if (startStr) {
+      const start = new Date(`${startStr}T00:00:00.000Z`);
+      if (!Number.isNaN(start.getTime())) range.$gte = start;
+    }
+    if (endStr) {
+      const end = new Date(`${endStr}T23:59:59.999Z`);
+      if (!Number.isNaN(end.getTime())) range.$lte = end;
+    }
+    if (Object.keys(range).length > 0) {
+      query.bookingDate = range;
+    }
+  }
+
+  if (typeof body.name === "string" && body.name.trim()) {
+    query.customerName = { $regex: body.name.trim(), $options: "i" };
+  }
+  if (typeof body.email === "string" && body.email.trim()) {
+    query.customerEmail = { $regex: body.email.trim(), $options: "i" };
+  }
+  if (typeof body.phone === "string" && body.phone.trim()) {
+    query.customerPhone = { $regex: body.phone.trim(), $options: "i" };
+  }
+
+  if (typeof body.guestCount === "number" && Number.isFinite(body.guestCount) && body.guestCount > 0) {
+    query.guestCount = body.guestCount;
+  }
+
+  const sectionsArr = Array.isArray(body.section) ? body.section.filter((s) => typeof s === "string" && s.trim()) : [];
+  if (sectionsArr.length > 0) {
+    query.sectionName = { $in: sectionsArr };
+  }
+
+  if (body.feedback === "given") {
+    query.feedback = { $ne: null };
+  } else if (body.feedback === "required") {
+    query.feedbackRequired = true;
+  }
+
+  const slotsArr = Array.isArray(body.slots) ? body.slots : [];
+  const validSlots = slotsArr.filter(
+    (s) =>
+      typeof s?.startTime === "string" &&
+      s.startTime.trim() !== "" &&
+      typeof s?.endTime === "string" &&
+      s.endTime.trim() !== ""
+  );
+  if (validSlots.length > 0) {
+    query.$or = validSlots.map((s) => ({
+      "slot.startTime": s.startTime.trim(),
+      "slot.endTime": s.endTime.trim(),
+    }));
+  }
+
+  return query;
+}
+
 /**
  * POST /admin/bookings/list — admin/staff list bookings with filters + pagination.
  * Server-side pagination; filters on status, bookingDate (single day), name, email, phone,
@@ -35,84 +111,7 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
     const skip = (page - 1) * limit;
 
     const connectionString = db.constants.connectionStrings.tableBooking;
-
-    const query: Record<string, unknown> = {};
-
-    // Status filter
-    const statusArr = Array.isArray(body.status) ? body.status : [];
-    const validStatuses = statusArr.filter((s) => ADMIN_BOOKING_STATUSES.includes(s as AdminBookingStatus));
-    if (validStatuses.length > 0) {
-      query.status = { $in: validStatuses };
-    }
-
-    // bookingDate filter – range between start and end (inclusive)
-    const startStr =
-      typeof body.bookingDateStart === "string" && body.bookingDateStart.trim()
-        ? body.bookingDateStart.trim()
-        : undefined;
-    const endStr =
-      typeof body.bookingDateEnd === "string" && body.bookingDateEnd.trim()
-        ? body.bookingDateEnd.trim()
-        : undefined;
-    if (startStr || endStr) {
-      const range: { $gte?: Date; $lte?: Date } = {};
-      if (startStr) {
-        const start = new Date(`${startStr}T00:00:00.000Z`);
-        if (!Number.isNaN(start.getTime())) range.$gte = start;
-      }
-      if (endStr) {
-        const end = new Date(`${endStr}T23:59:59.999Z`);
-        if (!Number.isNaN(end.getTime())) range.$lte = end;
-      }
-      if (Object.keys(range).length > 0) {
-        query.bookingDate = range;
-      }
-    }
-
-    // Text filters
-    if (typeof body.name === "string" && body.name.trim()) {
-      query.customerName = { $regex: body.name.trim(), $options: "i" };
-    }
-    if (typeof body.email === "string" && body.email.trim()) {
-      query.customerEmail = { $regex: body.email.trim(), $options: "i" };
-    }
-    if (typeof body.phone === "string" && body.phone.trim()) {
-      query.customerPhone = { $regex: body.phone.trim(), $options: "i" };
-    }
-
-    // Guest count (exact match)
-    if (typeof body.guestCount === "number" && Number.isFinite(body.guestCount) && body.guestCount > 0) {
-      query.guestCount = body.guestCount;
-    }
-
-    // Section filter
-    const sectionsArr = Array.isArray(body.section) ? body.section.filter((s) => typeof s === "string" && s.trim()) : [];
-    if (sectionsArr.length > 0) {
-      query.sectionName = { $in: sectionsArr };
-    }
-
-    // Feedback filter
-    if (body.feedback === "given") {
-      query.feedback = { $ne: null };
-    } else if (body.feedback === "required") {
-      query.feedbackRequired = true;
-    }
-
-    // Slot filter: booking.slot = { startTime: "07:30", endTime: "08:00" } (24h)
-    const slotsArr = Array.isArray(body.slots) ? body.slots : [];
-    const validSlots = slotsArr.filter(
-      (s) =>
-        typeof s?.startTime === "string" &&
-        s.startTime.trim() !== "" &&
-        typeof s?.endTime === "string" &&
-        s.endTime.trim() !== ""
-    );
-    if (validSlots.length > 0) {
-      query.$or = validSlots.map((s) => ({
-        "slot.startTime": s.startTime.trim(),
-        "slot.endTime": s.endTime.trim(),
-      }));
-    }
+    const query = buildAdminBookingsQuery(body);
 
     const projection = {
       _id: 1,
@@ -177,6 +176,130 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
     });
   } catch {
     res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+const EXPORT_MAX_ROWS = 50_000;
+
+function escapeCsvCell(value: string | number | null | undefined): string {
+  const s = value == null ? "" : String(value);
+  if (s.includes('"') || s.includes(",") || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function formatDateExport(v: string | Date | null | undefined): string {
+  if (v == null) return "";
+  const d = typeof v === "string" ? new Date(v) : v;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * POST /admin/bookings/export — admin/staff export all filtered bookings as CSV (no pagination).
+ */
+export async function exportAdminBookingsHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const body = (req.body as AdminListBookingsBody) ?? {};
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const query = buildAdminBookingsQuery(body);
+
+    const projection = {
+      _id: 1,
+      bookingNumber: 1,
+      customerName: 1,
+      customerEmail: 1,
+      customerPhone: 1,
+      bookingDate: 1,
+      sectionName: 1,
+      slot: 1,
+      guestCount: 1,
+      status: 1,
+      payment: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const items = await db.read.find({
+      req,
+      connectionString,
+      collection: "bookings",
+      query,
+      projection,
+      sort: { createdAt: -1 },
+      skip: 0,
+      limit: EXPORT_MAX_ROWS,
+    });
+
+    type Row = {
+      _id?: string;
+      bookingNumber?: number;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
+      bookingDate?: string;
+      sectionName?: string;
+      slot?: { startTime?: string; endTime?: string };
+      guestCount?: number;
+      status?: string;
+      payment?: { status?: string; method?: string } | null;
+      createdAt?: string;
+      updatedAt?: string;
+    };
+    const rows: Row[] = (items ?? []) as unknown as Row[];
+
+    const headers = [
+      "Booking ID",
+      "Name",
+      "Email",
+      "Phone",
+      "Booking date",
+      "Guest count",
+      "Slot start",
+      "Slot end",
+      "Section",
+      "Status",
+      "Payment status",
+      "Payment method",
+      "Created at",
+      "Updated at",
+    ];
+    const headerLine = headers.map(escapeCsvCell).join(",");
+
+    const dataLines = rows.map((r) => {
+      const slotStart = r.slot?.startTime ?? "";
+      const slotEnd = r.slot?.endTime ?? "";
+      const bookingId = r.bookingNumber != null ? String(r.bookingNumber) : (r._id ?? "");
+      const paymentStatus = r.payment?.status ?? "";
+      const paymentMethod = r.payment?.method ?? "";
+      return [
+        escapeCsvCell(bookingId),
+        escapeCsvCell(r.customerName),
+        escapeCsvCell(r.customerEmail),
+        escapeCsvCell(r.customerPhone),
+        escapeCsvCell(formatDateExport(r.bookingDate)),
+        escapeCsvCell(r.guestCount),
+        escapeCsvCell(slotStart),
+        escapeCsvCell(slotEnd),
+        escapeCsvCell(r.sectionName),
+        escapeCsvCell(r.status),
+        escapeCsvCell(paymentStatus),
+        escapeCsvCell(paymentMethod),
+        escapeCsvCell(formatDateExport(r.createdAt)),
+        escapeCsvCell(formatDateExport(r.updatedAt)),
+      ].join(",");
+    });
+
+    const bom = "\uFEFF";
+    const csv = bom + headerLine + "\n" + dataLines.join("\n");
+
+    const filename = `bookings_export_${formatDateExport(new Date()).replace(/-/g, "")}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(csv);
+  } catch {
+    res.status(500).json({ message: "Export failed" });
   }
 }
 

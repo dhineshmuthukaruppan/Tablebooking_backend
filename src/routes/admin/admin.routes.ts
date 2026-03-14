@@ -17,6 +17,13 @@ router.post(
   adminController.listAdminBookingsHandler
 );
 
+router.post(
+  "/bookings/export",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.exportAdminBookingsHandler
+);
+
 router.patch(
   "/bookings/:id",
   auth.authentication.authenticate,

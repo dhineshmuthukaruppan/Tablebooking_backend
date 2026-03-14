@@ -100,7 +100,7 @@ export async function listUsersPostHandler(req: Request, res: Response): Promise
 export interface AddUserBody {
   idToken?: string;
   username?: string;
-  mobile?: string;
+  phoneNumber?: string;
   role?: string;
   status?: string;
 }
@@ -108,7 +108,7 @@ export interface AddUserBody {
 export async function addUserHandler(req: Request, res: Response): Promise<void> {
   try {
     const body = (req.body as AddUserBody) ?? {};
-    const { idToken, username, mobile, role: rawRole, status: rawStatus } = body;
+    const { idToken, username, phoneNumber, role: rawRole, status: rawStatus } = body;
 
     const decoded = await verifyIdToken(idToken);
     if (!decoded) {
@@ -126,8 +126,8 @@ export async function addUserHandler(req: Request, res: Response): Promise<void>
     const isEmailVerified = Boolean(decoded.email_verified);
     const displayNameTrimmed =
       typeof username === "string" ? username.trim() : undefined;
-    const mobileTrimmed =
-      typeof mobile === "string" ? mobile.trim() : undefined;
+    const phoneNumberTrimmed =
+      typeof phoneNumber === "string" ? phoneNumber.trim() : undefined;
 
     let user = await db.read.findOne({
       req,
@@ -150,7 +150,7 @@ export async function addUserHandler(req: Request, res: Response): Promise<void>
         firebaseUid: decoded.uid,
         email,
         ...(displayNameTrimmed && { displayName: displayNameTrimmed }),
-        ...(mobileTrimmed && { mobile: mobileTrimmed }),
+        ...(phoneNumberTrimmed && { phoneNumber: phoneNumberTrimmed }),
         role,
         status,
         isEmailVerified,
@@ -178,7 +178,7 @@ export async function addUserHandler(req: Request, res: Response): Promise<void>
         updatedAt: now,
       };
       if (displayNameTrimmed !== undefined) updateFields.displayName = displayNameTrimmed;
-      if (mobileTrimmed !== undefined) updateFields.mobile = mobileTrimmed;
+      if (phoneNumberTrimmed !== undefined) updateFields.phoneNumber = phoneNumberTrimmed;
       await db.update.updateOne({
         req,
         connectionString,
@@ -204,7 +204,7 @@ export async function addUserHandler(req: Request, res: Response): Promise<void>
       data: {
         email: user.email,
         username: user.displayName,
-        mobile: user.mobile,
+        phoneNumber: user.phoneNumber,
         role: user.role,
         status: user.status,
       },
@@ -218,6 +218,8 @@ export interface UpdateUserBody {
   username?: string;
   role?: string;
   status?: string;
+  email?: string;
+  phoneNumber?: string;
 }
 
 /** PATCH /usermanagement/users/:id – update displayName, role, status (email/mobile not allowed). Updates Firebase displayName if user has real Firebase uid. */
@@ -236,12 +238,13 @@ export async function updateUserHandler(req: Request, res: Response): Promise<vo
       connectionString,
       collection: "users",
       query: { _id: new ObjectId(id) },
-    }) as { firebaseUid?: string; displayName?: string } | null;
+    }) as { firebaseUid?: string; displayName?: string; email?: string; phoneNumber?: string } | null;
 
     if (!existing) {
       res.status(404).json({ message: "User not found" });
       return;
     }
+    console.log("existing", existing);
 
     const update: Record<string, unknown> = { updatedAt: new Date() };
     const username = typeof body.username === "string" ? body.username.trim() : undefined;
@@ -250,7 +253,12 @@ export async function updateUserHandler(req: Request, res: Response): Promise<vo
     if (role !== undefined && ROLES.includes(role)) update.role = role;
     const status = body.status === "inactive" ? "inactive" : body.status === "active" ? "active" : undefined;
     if (status !== undefined) update.status = status;
-
+    if (body.email !== undefined && !(typeof existing.email === "string" && existing.email.trim() !== "")) {
+      update.email = body.email;
+    }
+    if (body.phoneNumber !== undefined && !(typeof existing.phoneNumber === "string" && existing.phoneNumber.trim() !== "")) {
+      update.phoneNumber = body.phoneNumber;
+    }
     if (Object.keys(update).length <= 1) {
       res.status(400).json({ message: "No valid fields to update (username, role, status)" });
       return;

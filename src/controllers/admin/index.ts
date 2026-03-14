@@ -2,6 +2,7 @@ export { dashboardHandler } from "./dashboard.handler";
 export { getUsersHandler, patchUserHandler } from "./users.handler";
 export {
   listAdminBookingsHandler,
+  exportAdminBookingsHandler,
   patchBookingByAdminHandler,
   postWalkInPaymentHandler,
 } from "./bookings.handler";

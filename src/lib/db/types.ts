@@ -7,7 +7,7 @@ export interface UserDocument {
   firebaseUid: string;
   email: string;
   displayName?: string;
-  mobile?: string;
+  phoneNumber?: string;
   role: Role;
   status?: UserStatus;
   isEmailVerified: boolean;
