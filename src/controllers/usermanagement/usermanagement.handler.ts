@@ -154,6 +154,7 @@ export async function addUserHandler(req: Request, res: Response): Promise<void>
         role,
         status,
         isEmailVerified,
+        isPhoneVerified: false,
         isEligibleForCoupons: false,
         createdAt: now,
         updatedAt: now,

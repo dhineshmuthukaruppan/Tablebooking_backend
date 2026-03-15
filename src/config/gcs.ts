@@ -154,15 +154,28 @@ export async function getFileBuffer(objectName: string): Promise<{
   }
 }
 
-/** Delete a file from GCS. Safe to call even if the file does not exist. */
+/** Delete a file from GCS. Safe to call even if the file does not exist. Throws on real errors. */
 export async function deleteFile(objectName: string): Promise<void> {
+  if (!objectName || typeof objectName !== "string" || !objectName.trim()) {
+    throw new Error("[gcs] deleteFile: objectName is required");
+  }
   const bucket = await getBucket();
-  if (!bucket) return;
+  if (!bucket) {
+    throw new Error("[gcs] deleteFile: GCS bucket is not configured (GCS_BUCKET missing).");
+  }
+  const file = bucket.file(objectName);
   try {
-    const file = bucket.file(objectName);
-    await file.delete({ ignoreNotFound: true } as { ignoreNotFound: boolean });
-  } catch {
-    // Swallow errors so a failed delete does not break API responses.
+    const [exists] = await file.exists();
+    if (!exists) {
+      // Already gone; nothing to do
+      return;
+    }
+    await file.delete();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.error("[gcs] deleteFile failed", { objectName, error: message });
+    throw err;
   }
 }
 

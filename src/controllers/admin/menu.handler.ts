@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
-import { uploadMenuImage } from "../../config/gcs";
+import { uploadMenuImage, deleteFile } from "../../config/gcs";
 
 const CONN = db.constants.connectionStrings.tableBooking;
 
@@ -110,6 +110,7 @@ export async function patchAdminCategoryHandler(req: Request, res: Response): Pr
     const slug = getBodyString(req, "slug");
     const orderVal = getBodyNumber(req, "order");
     const isActive = getBodyBool(req, "isActive");
+    const clearCoverImage = getBodyBool(req, "clearCoverImage") === true;
 
     const file = (req as unknown as { file?: Express.Multer.File }).file;
     let coverImage: string | undefined;
@@ -129,6 +130,18 @@ export async function patchAdminCategoryHandler(req: Request, res: Response): Pr
     if (orderVal !== undefined) update.order = orderVal;
     if (isActive !== undefined) update.isActive = isActive;
     if (coverImage !== undefined) update.coverImage = coverImage;
+    if (clearCoverImage) {
+      const existing = (await db.read.findOne({
+        req,
+        connectionString: CONN,
+        collection: "menu_categories",
+        query: { _id: new ObjectId(id) },
+      })) as { coverImage?: string | null } | null;
+      if (existing?.coverImage && typeof existing.coverImage === "string") {
+        await deleteFile(existing.coverImage);
+      }
+      if (coverImage === undefined) update.coverImage = null;
+    }
 
     if (Object.keys(update).length <= 1) {
       res.status(400).json({ message: "No valid fields to update" });
@@ -259,6 +272,7 @@ export async function patchAdminProductHandler(req: Request, res: Response): Pro
     const currency = getBodyString(req, "currency");
     const description = getBodyString(req, "description");
     const isAvailable = getBodyBool(req, "isAvailable");
+    const clearImage = getBodyBool(req, "clearImage") === true;
 
     let tags: string[] | undefined;
     const tagsRaw = (req.body as Record<string, unknown>).tags;
@@ -290,6 +304,18 @@ export async function patchAdminProductHandler(req: Request, res: Response): Pro
     if (isAvailable !== undefined) update.isAvailable = isAvailable;
     if (tags !== undefined) update.tags = tags;
     if (image !== undefined) update.image = image;
+    if (clearImage) {
+      const existing = (await db.read.findOne({
+        req,
+        connectionString: CONN,
+        collection: "menu_products",
+        query: { _id: new ObjectId(id) },
+      })) as { image?: string | null } | null;
+      if (existing?.image && typeof existing.image === "string") {
+        await deleteFile(existing.image);
+      }
+      if (image === undefined) update.image = null;
+    }
 
     if (Object.keys(update).length <= 1) {
       res.status(400).json({ message: "No valid fields to update" });
