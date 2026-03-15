@@ -21,4 +21,11 @@ router.put(
   masterController.updateGuestDatesConfigHandler
 );
 
+router.patch(
+  "/admin-email",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  masterController.updateGuestDatesAdminEmailHandler
+);
+
 export const guestDatesRoutes = router;

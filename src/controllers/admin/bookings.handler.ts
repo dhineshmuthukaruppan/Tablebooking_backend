@@ -1,10 +1,24 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import {
+  sendAdminBookingCancellationEmail,
+  sendAdminBookingConfirmationEmail,
+  sendBookingCancellationEmail,
+  sendBookingConfirmationEmail,
+} from "../../services/email/email.service";
 import * as bookingSequence from "../../services/bookingSequence";
 
 const ADMIN_BOOKING_STATUSES = ["pending", "confirmed", "completed", "noshow", "cancelled"] as const;
 type AdminBookingStatus = (typeof ADMIN_BOOKING_STATUSES)[number];
+
+function formatBookingDate(date: Date): string {
+  return date.toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
 
 export interface AdminListBookingsBody {
   page?: number;
@@ -336,6 +350,29 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
     const query = { _id: new ObjectId(id) };
     const now = new Date();
     const updates: Record<string, unknown> = { updatedAt: now };
+    const existingBooking = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "bookings",
+      query,
+    }) as {
+      _id?: ObjectId;
+      userId?: ObjectId | string | null;
+      customerEmail?: string;
+      customerName?: string;
+      bookingDate?: Date;
+      sectionName?: string;
+      slot?: { startTime?: string; endTime?: string };
+      guestCount?: number;
+      status?: string;
+    } | null;
+
+    if (!existingBooking) {
+      res.status(404).json({ message: "Booking not found" });
+      return;
+    }
+
+    const previousStatus = existingBooking.status;
 
     if (body.status !== undefined) {
       const valid = ["pending", "confirmed", "completed", "noshow", "cancelled"].includes(body.status);
@@ -401,6 +438,65 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       query,
       update: { $set: updates },
     });
+
+    const nextStatus = typeof body.status === "string" ? body.status : previousStatus;
+    const shouldSendConfirmationEmail =
+      previousStatus === "pending" && nextStatus === "confirmed";
+    const shouldSendCancellationEmail =
+      previousStatus === "pending" && nextStatus === "cancelled";
+
+    if (
+      (shouldSendConfirmationEmail || shouldSendCancellationEmail) &&
+      typeof existingBooking.customerName === "string" &&
+      existingBooking.customerName.trim() &&
+      existingBooking.bookingDate instanceof Date &&
+      typeof existingBooking.sectionName === "string" &&
+      existingBooking.sectionName.trim() &&
+      typeof existingBooking.slot?.startTime === "string" &&
+      existingBooking.slot.startTime.trim() &&
+      typeof existingBooking.slot?.endTime === "string" &&
+      existingBooking.slot.endTime.trim()
+    ) {
+      const emailPayload = {
+        customerEmail: existingBooking.customerEmail?.trim(),
+        customerId:
+          existingBooking.userId instanceof ObjectId
+            ? existingBooking.userId.toString()
+            : existingBooking.userId?.toString(),
+        customerName: existingBooking.customerName.trim(),
+        bookingId: id,
+        bookingDate: formatBookingDate(existingBooking.bookingDate),
+        startTime: existingBooking.slot.startTime.trim(),
+        endTime: existingBooking.slot.endTime.trim(),
+        guests:
+          typeof existingBooking.guestCount === "number"
+            ? existingBooking.guestCount
+            : 0,
+        section: existingBooking.sectionName.trim(),
+        venueName: "The Sheesha Factory",
+        location: "RS Puram, Coimbatore",
+      };
+
+      if (shouldSendConfirmationEmail) {
+        void sendBookingConfirmationEmail(emailPayload).catch((error) => {
+          console.error("[admin-booking] Booking confirmation email failed", error);
+        });
+
+        void sendAdminBookingConfirmationEmail(req, emailPayload).catch((error) => {
+          console.error("[admin-booking] Admin booking confirmation email failed", error);
+        });
+      }
+
+      if (shouldSendCancellationEmail) {
+        void sendBookingCancellationEmail(emailPayload).catch((error) => {
+          console.error("[admin-booking] Booking cancellation email failed", error);
+        });
+
+        void sendAdminBookingCancellationEmail(req, emailPayload).catch((error) => {
+          console.error("[admin-booking] Admin booking cancellation email failed", error);
+        });
+      }
+    }
 
     res.status(200).json({ message: "Booking updated" });
   } catch {

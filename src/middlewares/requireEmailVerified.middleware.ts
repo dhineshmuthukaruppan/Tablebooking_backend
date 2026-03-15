@@ -13,9 +13,12 @@ export function requireEmailVerified(
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
-  if (!req.user.isEmailVerified) {
+  const isEmailVerified = Boolean(req.user.isEmailVerified);
+  const isPhoneVerified = Boolean(req.user.isPhoneVerified);
+
+  if (!isEmailVerified && !isPhoneVerified) {
     res.status(403).json({
-      message: "Email verification required",
+      message: "Email or phone verification required",
       code: "EMAIL_VERIFICATION_REQUIRED",
     });
     return;

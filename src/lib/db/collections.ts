@@ -11,7 +11,26 @@ export function getUsersCollection(db: Db) {
 export async function ensureUsersIndexes(db: Db): Promise<void> {
   const coll = getUsersCollection(db);
   await coll.createIndex({ firebaseUid: 1 }, { unique: true });
-  await coll.createIndex({ email: 1 }, { unique: true, sparse: true });
+
+  const indexes = await coll.indexes();
+  const legacyEmailIndex = indexes.find((index) => index.name === "email_1");
+  if (legacyEmailIndex) {
+    await coll.dropIndex("email_1");
+  }
+
+  await coll.updateMany(
+    { email: "" },
+    { $unset: { email: "" } }
+  );
+
+  await coll.createIndex(
+    { email: 1 },
+    {
+      unique: true,
+      name: "email_1",
+      sparse: true,
+    }
+  );
 }
 
 export async function ensureBookingsIndexes(db: Db): Promise<void> {

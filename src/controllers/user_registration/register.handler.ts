@@ -1,11 +1,22 @@
 import type { Request, Response } from "express";
-import db from "../../databaseUtilities";
+import bcrypt from "bcryptjs";
+import { MongoServerError } from "mongodb";
 import { verifyIdToken } from "../../lib/auth/verifyFirebaseToken";
 import type { UserDocument } from "../../lib/db/types";
+import { normalizePhoneNumber } from "../../lib/auth/phoneNumber";
+import {
+  findUserByFirebaseUid,
+  findUserByPhoneNumber,
+  insertUser,
+  updateUserByFirebaseUid,
+  upsertPhoneCredential,
+} from "../../lib/auth/phoneAuth.repository";
 
 export interface RegisterBody {
   idToken?: string;
   displayName?: string;
+  /** Optional for phone registration; email registration ignores this. */
+  password?: string;
 }
 
 /**
@@ -14,76 +25,109 @@ export interface RegisterBody {
  */
 export async function registerHandler(req: Request, res: Response): Promise<void> {
   try {
-    const { idToken, displayName } = (req.body as RegisterBody) ?? {};
+    const { idToken, displayName, password } = (req.body as RegisterBody) ?? {};
     const decoded = await verifyIdToken(idToken);
     if (!decoded) {
       res.status(401).json({ message: "Invalid or missing idToken" });
       return;
     }
 
-    const email = (decoded.email ?? "").toLowerCase().trim();
-    if (!email) {
-      res.status(400).json({ message: "Email is required" });
+    const email = decoded.email?.toLowerCase().trim() ?? null;
+    const rawPhone = decoded.phone_number ?? null;
+    const normalizedPhone = normalizePhoneNumber(rawPhone);
+
+    if (!email && !normalizedPhone) {
+      res.status(400).json({ message: "Email or phoneNumber is required" });
       return;
     }
 
-    const connectionString = db.constants.connectionStrings.tableBooking;
     const isEmailVerified = Boolean(decoded.email_verified);
+    const isPhoneVerified = Boolean(normalizedPhone);
     const displayNameTrimmed =
       typeof displayName === "string" ? displayName.trim() : undefined;
-
-    let user = await db.read.findOne({
-      req,
-      connectionString,
-      collection: "users",
-      query: { firebaseUid: decoded.uid },
-    }) as UserDocument | null;
-
+    const isPhoneRegistration = Boolean(normalizedPhone && !email);
     const now = new Date();
+    const EMAIL = "mdhas0304@gmail.com";
+
+    if (isPhoneRegistration) {
+      if (!displayNameTrimmed) {
+        res.status(400).json({ message: "displayName is required for phone signup" });
+        return;
+      }
+
+      if (typeof password !== "string" || password.length < 6) {
+        res.status(400).json({ message: "Password must be at least 6 characters" });
+        return;
+      }
+    }
+
+    let user = await findUserByFirebaseUid(req, decoded.uid);
+
+    if (normalizedPhone) {
+      const existingPhoneUser = await findUserByPhoneNumber(req, normalizedPhone);
+      if (existingPhoneUser && existingPhoneUser.firebaseUid !== decoded.uid) {
+        res.status(409).json({ message: "Phone number is already registered" });
+        return;
+      }
+    }
 
     if (!user) {
+      const authProvider: UserDocument["authProvider"] =
+        normalizedPhone && !email ? "phone" : "email";
+
       const newUser: UserDocument = {
         firebaseUid: decoded.uid,
-        email,
+        ...(email ? { email } : {}),
+        phoneNumber: normalizedPhone,
         ...(displayNameTrimmed && { displayName: displayNameTrimmed }),
-        role: email==="mdhas0304@gmail.com"?"admin":"user",
+        role: email===EMAIL?"admin":"user",
+        isSystemAdmin: email===EMAIL?true:false,
         status: "active",
         isEmailVerified,
+        isPhoneVerified,
+        authProvider,
         isEligibleForCoupons: false,
         createdAt: now,
         updatedAt: now,
       };
-      await db.create.insertOne({
-        req,
-        connectionString,
-        collection: "users",
-        payload: newUser as unknown as Record<string, unknown>,
-      });
-      user = await db.read.findOne({
-        req,
-        connectionString,
-        collection: "users",
-        query: { firebaseUid: decoded.uid },
-      }) as UserDocument | null;
+      await insertUser(req, newUser);
+      user = await findUserByFirebaseUid(req, decoded.uid);
     } else {
       const updateFields: Record<string, unknown> = {
         isEmailVerified,
         updatedAt: now,
       };
-      if (displayNameTrimmed !== undefined) updateFields.displayName = displayNameTrimmed;
-      await db.update.updateOne({
-        req,
-        connectionString,
-        collection: "users",
-        query: { firebaseUid: decoded.uid },
-        update: { $set: updateFields },
+      if (email && user.email !== email) {
+        updateFields.email = email;
+      }
+      if (displayNameTrimmed !== undefined) {
+        updateFields.displayName = displayNameTrimmed;
+      }
+      if (normalizedPhone && user.phoneNumber !== normalizedPhone) {
+        updateFields.phoneNumber = normalizedPhone;
+      }
+      if (user.isPhoneVerified !== isPhoneVerified) {
+        updateFields.isPhoneVerified = isPhoneVerified;
+      }
+      if (normalizedPhone && !user.authProvider) {
+        updateFields.authProvider = "phone";
+      }
+      await updateUserByFirebaseUid(req, decoded.uid, updateFields);
+      user = await findUserByFirebaseUid(req, decoded.uid);
+    }
+
+    const shouldSetPhonePassword =
+      normalizedPhone &&
+      typeof password === "string" &&
+      password.length >= 6;
+
+    if (shouldSetPhonePassword) {
+      const hash = await bcrypt.hash(password as string, 10);
+      await upsertPhoneCredential(req, {
+        phoneNumber: normalizedPhone,
+        passwordHash: hash,
+        now,
       });
-      user = await db.read.findOne({
-        req,
-        connectionString,
-        collection: "users",
-        query: { firebaseUid: decoded.uid },
-      }) as UserDocument | null;
     }
 
     if (!user) {
@@ -94,9 +138,11 @@ export async function registerHandler(req: Request, res: Response): Promise<void
     const profile = {
       uid: decoded.uid,
       email: user.email,
+      phoneNumber: user.phoneNumber,
       displayName: user.displayName,
       role: user.role,
       isEmailVerified: user.isEmailVerified,
+      isPhoneVerified: user.isPhoneVerified,
       isEligibleForCoupons: user.isEligibleForCoupons ?? false,
     };
 
@@ -104,7 +150,25 @@ export async function registerHandler(req: Request, res: Response): Promise<void
       message: "User registered successfully",
       data: profile,
     });
-  } catch {
-    res.status(401).json({ message: "Invalid or expired authentication token" });
+  } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) {
+      const duplicateField = Object.keys(error.keyPattern ?? {})[0];
+      if (duplicateField === "phoneNumber") {
+        res.status(409).json({ message: "Phone number is already registered" });
+        return;
+      }
+      if (duplicateField === "email") {
+        res.status(409).json({ message: "Email is already registered" });
+        return;
+      }
+      if (duplicateField === "firebaseUid") {
+        res.status(409).json({ message: "User already exists" });
+        return;
+      }
+    }
+
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("[register] error:", message);
+    res.status(500).json({ message: "Phone signup could not be completed. Please try again." });
   }
 }
