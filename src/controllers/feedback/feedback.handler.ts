@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import { uploadPhoto, deleteFile } from "../../config/gcs";
+
+const FEEDBACK_SERVE_PATH = "/api/v1/photos/serve";
 
 /** GET /feedback?bookingId=xxx — get feedback for one booking (own only). */
 export async function getFeedbackByBookingIdHandler(req: Request, res: Response): Promise<void> {
@@ -23,6 +26,49 @@ export async function getFeedbackByBookingIdHandler(req: Request, res: Response)
       query: { bookingId: new ObjectId(bookingId), userId: user.id },
     });
     res.status(200).json({ message: "Feedback", data: doc ?? null });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/** POST /feedback/images — upload a single feedback image to GCS and return its public URL + object name. */
+export async function uploadFeedbackImageHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const file = (req as unknown as { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ message: "Image file is required" });
+      return;
+    }
+    const uploadResult = await uploadPhoto({
+      buffer: file.buffer,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      // Reuse an existing category; keep feedback assets in a separate folder.
+      category: "ambience",
+      appFolder: "table-booking-feedback",
+    });
+    res.status(201).json({
+      message: "Feedback image uploaded",
+      data: {
+        url: `${FEEDBACK_SERVE_PATH}?object=${encodeURIComponent(uploadResult.objectName)}`,
+        objectName: uploadResult.objectName,
+      },
+    });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/** DELETE /feedback/images?object=... — delete a feedback image from GCS by object name. */
+export async function deleteFeedbackImageHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const objectName = req.query.object as string | undefined;
+    if (!objectName || typeof objectName !== "string") {
+      res.status(400).json({ message: "Missing object parameter" });
+      return;
+    }
+    await deleteFile(objectName);
+    res.status(200).json({ message: "Feedback image deleted" });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
