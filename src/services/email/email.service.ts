@@ -4,6 +4,7 @@ import { resolveAdminContactEmail } from "../admin/guestDates.service";
 import { generateBookingConfirmationHTML } from "./templates/bookingConfirmationTemplate";
 import { generateBookingAdminStatusHTML } from "./templates/bookingAdminStatusTemplate";
 import { generateBookingCancellationHTML } from "./templates/bookingCancellationTemplate";
+import { generateBookingAdminPhoneUserHTML } from "./templates/bookingAdminPhoneUserTemplate";
 import { triggerFirebaseEmail } from "./firebaseEmailTrigger";
 
 function getNormalizedEmail(email?: string | null): string | null {
@@ -152,6 +153,37 @@ export async function sendAdminBookingCancellationEmail(
     subject: "Booking Cancelled - Admin Notification - The Sheesha Factory",
     html: generateBookingAdminStatusHTML("cancelled", payload),
     event: "cancellation",
+  });
+}
+
+export async function sendAdminPhoneUserBookingEmail(
+  req: Request,
+  payload: BookingConfirmationEmailPayload
+): Promise<void> {
+  const adminEmail = await resolveAdminRecipient(req, payload, "confirmation");
+
+  console.info("[email] Building phone-user booking email for admin", {
+    bookingId: payload.bookingId,
+    adminRecipient: adminEmail,
+    customerId: payload.customerId ?? null,
+    customerPhone: payload.customerPhone ?? null,
+  });
+
+  if (!adminEmail) {
+    return;
+  }
+
+  await triggerFirebaseEmail({
+    to: [adminEmail],
+    subject: "New Booking from Phone User",
+    html: generateBookingAdminPhoneUserHTML(payload),
+  });
+
+  console.info("[email] Phone-user booking email handed to queue layer for admin", {
+    bookingId: payload.bookingId,
+    adminRecipient: adminEmail,
+    customerId: payload.customerId ?? null,
+    customerPhone: payload.customerPhone ?? null,
   });
 }
 

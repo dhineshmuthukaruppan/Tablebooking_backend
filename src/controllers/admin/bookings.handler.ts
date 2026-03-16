@@ -331,6 +331,9 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       typeof existingBooking.slot?.endTime === "string" &&
       existingBooking.slot.endTime.trim()
     ) {
+
+
+      
       const emailPayload = {
         customerEmail: existingBooking.customerEmail?.trim(),
         customerId:

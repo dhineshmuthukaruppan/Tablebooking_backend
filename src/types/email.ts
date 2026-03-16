@@ -3,6 +3,7 @@ export interface BookingConfirmationEmailPayload {
   adminEmail?: string | null;
   customerId?: string;
   customerName: string;
+  customerPhone?: string;
   bookingId: string;
   bookingDate: string;
   startTime: string;

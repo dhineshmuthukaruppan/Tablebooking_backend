@@ -50,29 +50,39 @@ export async function resolveAdminContactEmail(
 ): Promise<string> {
   const normalizedRequestedEmail = normalizeEmail(requestedAdminEmail);
 
-  if (!normalizedRequestedEmail) {
-    const systemAdminEmail = await getSystemAdminEmail(req);
-    if (!systemAdminEmail) {
+  // When an explicit value is provided (e.g. from Admin Contact Email save),
+  // validate that it belongs to an admin user.
+  if (normalizedRequestedEmail) {
+    const adminUser = await findAdminUserByEmail(req, normalizedRequestedEmail);
+    const adminUserEmail = normalizeEmail(adminUser?.email);
+
+    if (!adminUserEmail) {
       throw new GuestDatesConfigError(
-        "No system admin email is configured. Please create a system admin user first.",
-        500
+        "Selected admin contact email must belong to an admin user.",
+        400
       );
     }
 
-    return systemAdminEmail;
+    return adminUserEmail;
   }
 
-  const adminUser = await findAdminUserByEmail(req, normalizedRequestedEmail);
-  const adminUserEmail = normalizeEmail(adminUser?.email);
+  // No explicit email provided – first try the persisted guest_date.adminEmail.
+  const configDoc = await findGuestDatesConfig(req);
+  const configAdminEmail = normalizeEmail(configDoc?.adminEmail);
+  if (configAdminEmail) {
+    return configAdminEmail;
+  }
 
-  if (!adminUserEmail) {
+  // Fallback: first system admin user.
+  const systemAdminEmail = await getSystemAdminEmail(req);
+  if (!systemAdminEmail) {
     throw new GuestDatesConfigError(
-      "Selected admin contact email must belong to an admin user.",
-      400
+      "No system admin email is configured. Please create a system admin user first.",
+      500
     );
   }
 
-  return adminUserEmail;
+  return systemAdminEmail;
 }
 
 export async function getGuestDatesConfig(
