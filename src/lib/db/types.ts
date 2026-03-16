@@ -7,12 +7,11 @@ export interface UserDocument {
   firebaseUid: string;
   email?: string | null;
   displayName?: string;
-  mobile?: string;
+  phoneNumber?: string | null;
   role: Role;
   isSystemAdmin?: boolean;
   status?: UserStatus;
   isEmailVerified: boolean;
-  phoneNumber?: string | null;
   isPhoneVerified: boolean;
   authProvider?: "email" | "phone";
   isEligibleForCoupons?: boolean;

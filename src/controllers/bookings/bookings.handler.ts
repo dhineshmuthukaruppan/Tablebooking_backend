@@ -16,6 +16,7 @@ import {
   bookingCancelledSMS,
   bookingConfirmedSMS,
 } from "../../services/smsTemplates";
+import * as bookingSequence from "../../services/bookingSequence";
 
 const GUEST_DATE_QUERY = { type: "default" } as const;
 
@@ -264,7 +265,9 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     }
 
     const now = new Date();
+    const bookingNumber = await bookingSequence.getNextBookingNumber(req);
     const doc = {
+      bookingNumber,
       userId: user.id,
       customerName,
       customerPhone: customerPhone || undefined,

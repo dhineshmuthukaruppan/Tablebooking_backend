@@ -17,6 +17,13 @@ router.post(
   adminController.listAdminBookingsHandler
 );
 
+router.post(
+  "/bookings/export",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.exportAdminBookingsHandler
+);
+
 router.patch(
   "/bookings/:id",
   auth.authentication.authenticate,
@@ -29,6 +36,31 @@ router.post(
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
   adminController.postWalkInPaymentHandler
+);
+
+router.get(
+  "/table-allocations",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.getTableAllocationsHandler
+);
+router.post(
+  "/table-allocations",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.postTableAllocationsHandler
+);
+router.delete(
+  "/table-allocations",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.deleteTableAllocationsHandler
+);
+router.delete(
+  "/table-allocations/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.deleteTableAllocationsHandler
 );
 
 router.get(

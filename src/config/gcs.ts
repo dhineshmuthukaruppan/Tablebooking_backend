@@ -1,4 +1,7 @@
+import fs from "fs";
+import path from "path";
 import { Storage } from "@google-cloud/storage";
+import { GoogleAuth } from "google-auth-library";
 import { env } from "./env";
 
 type PhotoCategory = "ambience" | "food";
@@ -12,11 +15,54 @@ if (!bucketName) {
   console.warn("[gcs] GCS_BUCKET is not set. Photo upload endpoints will fail.");
 }
 
-// Use Application Default Credentials (ADC). On Cloud Run, this will use the
-// service account attached to the service, which must have Storage permissions.
-const storage = bucketName ? new Storage() : undefined;
+const localCredentialsPath = path.resolve(
+  process.cwd(),
+  "secrets",
+  "gcs-credentials.json"
+);
 
-const bucket = storage && bucketName ? storage.bucket(bucketName) : undefined;
+const auth = new GoogleAuth({
+  scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+});
+
+let storagePromise: Promise<Storage | undefined> | undefined;
+
+async function createStorage(): Promise<Storage | undefined> {
+  if (!bucketName) return undefined;
+
+  try {
+    await auth.getClient();
+    return new Storage();
+  } catch (error) {
+    const canUseLocalFallback =
+      env.NODE_ENV !== "production" && fs.existsSync(localCredentialsPath);
+
+    if (canUseLocalFallback) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[gcs] ADC is not available. Falling back to local credentials file at ${localCredentialsPath}.`
+      );
+      return new Storage({ keyFilename: localCredentialsPath });
+    }
+
+    throw new Error(
+      "[gcs] No Google Cloud credentials available. Run `gcloud auth application-default login`, set `GOOGLE_APPLICATION_CREDENTIALS`, or add `secrets/gcs-credentials.json` for local development.",
+      { cause: error instanceof Error ? error : undefined }
+    );
+  }
+}
+
+async function getStorage(): Promise<Storage | undefined> {
+  if (!storagePromise) {
+    storagePromise = createStorage();
+  }
+  return storagePromise;
+}
+
+async function getBucket() {
+  const storage = await getStorage();
+  return storage && bucketName ? storage.bucket(bucketName) : undefined;
+}
 
 export interface UploadedPhotoInfo {
   publicUrl: string;
@@ -30,6 +76,7 @@ export async function uploadPhoto(params: {
   category: PhotoCategory;
   appFolder?: string;
 }): Promise<UploadedPhotoInfo> {
+  const bucket = await getBucket();
   if (!bucket) {
     throw new Error("GCS is not configured. Missing GCS_BUCKET.");
   }
@@ -63,8 +110,9 @@ export async function uploadMenuImage(params: {
   mimeType: string;
   folder: MenuImageFolder;
 }): Promise<{ publicUrl: string; objectName: string }> {
+  const bucket = await getBucket();
   if (!bucket) {
-    throw new Error("GCS is not configured. Missing GCS_FILE_UPLOAD_CONFIG or GCS_BUCKET.");
+    throw new Error("GCS is not configured. Missing GCS_BUCKET.");
   }
 
   const { buffer, originalName, mimeType, folder } = params;
@@ -90,6 +138,7 @@ export async function getFileBuffer(objectName: string): Promise<{
   buffer: Buffer;
   contentType: string;
 } | null> {
+  const bucket = await getBucket();
   if (!bucket) return null;
   try {
     const file = bucket.file(objectName);
@@ -105,14 +154,28 @@ export async function getFileBuffer(objectName: string): Promise<{
   }
 }
 
-/** Delete a file from GCS. Safe to call even if the file does not exist. */
+/** Delete a file from GCS. Safe to call even if the file does not exist. Throws on real errors. */
 export async function deleteFile(objectName: string): Promise<void> {
-  if (!bucket) return;
+  if (!objectName || typeof objectName !== "string" || !objectName.trim()) {
+    throw new Error("[gcs] deleteFile: objectName is required");
+  }
+  const bucket = await getBucket();
+  if (!bucket) {
+    throw new Error("[gcs] deleteFile: GCS bucket is not configured (GCS_BUCKET missing).");
+  }
+  const file = bucket.file(objectName);
   try {
-    const file = bucket.file(objectName);
-    await file.delete({ ignoreNotFound: true } as { ignoreNotFound: boolean });
-  } catch {
-    // Swallow errors so a failed delete does not break API responses.
+    const [exists] = await file.exists();
+    if (!exists) {
+      // Already gone; nothing to do
+      return;
+    }
+    await file.delete();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.error("[gcs] deleteFile failed", { objectName, error: message });
+    throw err;
   }
 }
 

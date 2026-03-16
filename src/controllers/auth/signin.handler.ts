@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import db from "../../databaseUtilities";
 import { verifyIdToken } from "../../lib/auth/verifyFirebaseToken";
 import type { UserDocument } from "../../lib/db/types";
+import { logger } from "../../config/logger";
 
 interface SigninBody {
   idToken?: string;
@@ -106,10 +107,25 @@ export async function signinHandler(req: Request, res: Response): Promise<void> 
       data: buildSigninProfile(user, decoded.uid),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[signin] error:", message);
-    res.status(401).json({
-      message: "Invalid or expired authentication token",
+    const err = error instanceof Error ? error : new Error(String(error));
+    logger.error("signin failed", {
+      message: err.message,
+      stack: err.stack,
+      name: err.name,
     });
+    if (res.headersSent) return;
+    const isAuthError =
+      err.message?.includes("token") ||
+      err.message?.includes("auth") ||
+      err.name === "FirebaseAuthError";
+    if (isAuthError) {
+      res.status(401).json({
+        message: "Invalid or expired authentication token",
+      });
+    } else {
+      res.status(500).json({
+        message: "Internal server error",
+      });
+    }
   }
 }
