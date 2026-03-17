@@ -157,7 +157,24 @@ export async function listBookingsHandler(req: Request, res: Response): Promise<
   }
 }
 
-/** POST /bookings — create a booking (body: customerName, customerEmail, customerPhone?, bookingDate, sectionId, sectionName, slot, guestCount). */
+function getWeekdayName(date: Date): string {
+  return ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][
+    date.getDay()
+  ];
+}
+
+function isTimeWithinRange(time: string, start: string, end: string): boolean {
+  const toMinutes = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const t = toMinutes(time);
+  const s = toMinutes(start);
+  const e = toMinutes(end);
+  return t >= s && t < e;
+}
+
+/** POST /bookings — create a booking (body: customerName, customerEmail, customerPhone?, bookingDate, sectionId, sectionName, slot, guestCount, couponCode?). */
 export async function createBookingHandler(req: Request, res: Response): Promise<void> {
   try {
     const user = req.user;
@@ -174,6 +191,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       sectionName?: string;
       slot?: { startTime?: string; endTime?: string };
       guestCount?: number;
+      couponCode?: string;
     };
     const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
     const customerEmail = typeof body.customerEmail === "string" ? body.customerEmail.trim() : (user.email ?? "").toLowerCase();
@@ -185,6 +203,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     const startTime = typeof slot.startTime === "string" ? slot.startTime.trim() : "";
     const endTime = typeof slot.endTime === "string" ? slot.endTime.trim() : "";
     const guestCount = typeof body.guestCount === "number" ? Math.max(1, Math.floor(body.guestCount)) : 1;
+    const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : "";
 
     if (!customerName || !bookingDateStr || !sectionIdStr || !sectionName || !startTime || !endTime) {
       res.status(400).json({
@@ -229,6 +248,153 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       totalSeats,
     });
 
+    // Optional coupon validation (percentage + conditions).
+    let appliedCoupon: { couponCode: string; appliedPercentage: number } | null = null;
+    if (couponCode) {
+      const coupon = (await db.read.findOne({
+        req,
+        connectionString,
+        collection: db.constants.dbTables.coupons,
+        query: { code: couponCode, isActive: true, deletedAt: null },
+      })) as
+        | ({
+            expiryDate?: Date | null;
+            maxUsageLimit?: number | null;
+            totalUsed?: number | null;
+            offerConfig?: {
+              defaultOffer?: number;
+              customDates?: { date: Date; percentage: number }[];
+              specialDateRanges?: {
+                isEnabled?: boolean;
+                startDateTime?: Date;
+                endDateTime?: Date;
+                percentage: number;
+              }[];
+              weekday?: { isEnabled?: boolean; days?: Record<string, number | undefined> };
+            };
+            conditions?: {
+              minGuestCount?: number;
+              minBookingAmount?: number;
+              allowedSections?: string[];
+              allowedWeekdays?: string[];
+              firstTimeUsersOnly?: boolean;
+              validBookingTimeRange?: { startTime: string; endTime: string };
+            };
+          } & Record<string, unknown>)
+        | null;
+
+      const invalidResponse = () => {
+        res.status(400).json({ message: "Coupon expired or invalid for this booking" });
+        return true;
+      };
+
+      if (!coupon) {
+        if (invalidResponse()) return;
+      } else {
+        if (coupon.expiryDate instanceof Date && !Number.isNaN(coupon.expiryDate.getTime())) {
+          if (coupon.expiryDate.getTime() < bookingDate.getTime()) {
+            if (invalidResponse()) return;
+          }
+        }
+
+        if (
+          typeof coupon.maxUsageLimit === "number" &&
+          typeof coupon.totalUsed === "number" &&
+          coupon.maxUsageLimit > 0 &&
+          coupon.totalUsed >= coupon.maxUsageLimit
+        ) {
+          if (invalidResponse()) return;
+        }
+
+        const offer = coupon.offerConfig ?? {};
+        let percentage = 0;
+
+        // 1) Custom date offers – match by date only.
+        if (Array.isArray(offer.customDates) && offer.customDates.length > 0) {
+          const bookingKey = bookingDate.toISOString().slice(0, 10);
+          for (const cd of offer.customDates) {
+            if (!(cd.date instanceof Date)) continue;
+            const cdKey = cd.date.toISOString().slice(0, 10);
+            if (cdKey === bookingKey && typeof cd.percentage === "number") {
+              percentage = cd.percentage;
+              break;
+            }
+          }
+        }
+
+        // 2) Special date ranges – slot start must fall within enabled range.
+        if (!percentage && Array.isArray(offer.specialDateRanges) && offer.specialDateRanges.length > 0) {
+          const slotStart = new Date(bookingDate);
+          const [sh, sm] = startTime.split(":").map(Number);
+          slotStart.setHours(sh || 0, sm || 0, 0, 0);
+          for (const sr of offer.specialDateRanges) {
+            if (sr.isEnabled === false) continue;
+            const startDt = sr.startDateTime instanceof Date ? sr.startDateTime : null;
+            const endDt = sr.endDateTime instanceof Date ? sr.endDateTime : null;
+            if (!startDt || !endDt) continue;
+            if (slotStart.getTime() >= startDt.getTime() && slotStart.getTime() <= endDt.getTime()) {
+              if (typeof sr.percentage === "number") {
+                percentage = sr.percentage;
+                break;
+              }
+            }
+          }
+        }
+
+        // 3) Weekday offers.
+        if (!percentage && offer.weekday?.isEnabled) {
+          const weekday = getWeekdayName(bookingDate);
+          const days = offer.weekday.days ?? {};
+          const pct = days[weekday] ?? (days as Record<string, number | undefined>)[weekday.toLowerCase()];
+          if (typeof pct === "number" && pct > 0) {
+            percentage = pct;
+          }
+        }
+
+        // 4) Default.
+        if (!percentage && typeof offer.defaultOffer === "number" && offer.defaultOffer > 0) {
+          percentage = offer.defaultOffer;
+        }
+
+        // Conditions.
+        const conditions = coupon.conditions ?? {};
+        const bookingWeekday = getWeekdayName(bookingDate);
+        if (conditions.minGuestCount && guestCount < conditions.minGuestCount) {
+          if (invalidResponse()) return;
+        }
+        if (
+          Array.isArray(conditions.allowedWeekdays) &&
+          conditions.allowedWeekdays.length > 0 &&
+          !conditions.allowedWeekdays
+            .map((w) => w.toLowerCase())
+            .includes(bookingWeekday.toLowerCase())
+        ) {
+          if (invalidResponse()) return;
+        }
+        if (
+          Array.isArray(conditions.allowedSections) &&
+          conditions.allowedSections.length > 0 &&
+          !conditions.allowedSections.some(
+            (s) => s.trim().toLowerCase() === sectionName.toLowerCase(),
+          )
+        ) {
+          if (invalidResponse()) return;
+        }
+        if (
+          conditions.validBookingTimeRange &&
+          !isTimeWithinRange(startTime, conditions.validBookingTimeRange.startTime, conditions.validBookingTimeRange.endTime)
+        ) {
+          if (invalidResponse()) return;
+        }
+
+        if (!percentage || percentage <= 0) {
+          if (invalidResponse()) return;
+        }
+
+        appliedCoupon = { couponCode, appliedPercentage: percentage };
+      }
+    }
+
     const allocated = await slotInventory.allocateSeats({
       req,
       bookingDate,
@@ -272,7 +438,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       slot: { startTime, endTime },
       guestCount,
       status,
-      coupon: null,
+      coupon: appliedCoupon,
       billing: null,
       payment: {
         status: null,

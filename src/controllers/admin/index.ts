@@ -21,3 +21,9 @@ export {
   postAdminProductHandler,
   patchAdminProductHandler,
 } from "./menu.handler";
+export {
+  listAdminCouponsHandler,
+  createCouponHandler,
+  updateCouponHandler,
+  softDeleteCouponHandler,
+} from "./coupons.handler";

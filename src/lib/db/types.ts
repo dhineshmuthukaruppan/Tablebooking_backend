@@ -17,5 +17,63 @@ export interface UserDocument {
   isEligibleForCoupons?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
-  
+}
+
+export interface CouponWeekdayConfig {
+  isEnabled: boolean;
+  days: {
+    monday?: number;
+    tuesday?: number;
+    wednesday?: number;
+    thursday?: number;
+    friday?: number;
+  };
+}
+
+export interface CouponCustomDateOffer {
+  date: Date;
+  percentage: number;
+}
+
+export interface CouponSpecialDateRangeOffer {
+  isEnabled: boolean;
+  startDateTime: Date;
+  endDateTime: Date;
+  percentage: number;
+}
+
+export interface CouponOfferConfig {
+  defaultOffer: number;
+  customDates?: CouponCustomDateOffer[];
+  specialDateRanges?: CouponSpecialDateRangeOffer[];
+  weekday?: CouponWeekdayConfig;
+}
+
+export interface CouponConditions {
+  minGuestCount?: number;
+  minBookingAmount?: number;
+  allowedSections?: string[];
+  allowedWeekdays?: string[];
+  firstTimeUsersOnly?: boolean;
+  validBookingTimeRange?: {
+    startTime: string;
+    endTime: string;
+  };
+}
+
+export interface CouponDocument {
+  _id?: import("mongodb").ObjectId;
+  code: string;
+  description: string;
+  isActive: boolean;
+  oneTimePerUser: boolean;
+  expiryDate?: Date | null;
+  maxUsageLimit?: number | null;
+  totalUsed?: number;
+  offerConfig: CouponOfferConfig;
+  conditions?: CouponConditions;
+  termsAndConditions?: string[];
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date | null;
 }

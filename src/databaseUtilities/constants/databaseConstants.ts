@@ -17,6 +17,7 @@ export const dbTables = {
   menu_categories: "menu_categories",
   menu_products: "menu_products",
   counters: "counters",
+  coupons: "coupons",
 } as const;
 
 export const connectionStrings = {
