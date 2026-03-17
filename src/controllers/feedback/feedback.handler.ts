@@ -173,14 +173,32 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
 export async function getPublicFeedbackHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
-    const rawList = await db.read.find({
+    const pageRaw = typeof req.query.page === "string" ? Number(req.query.page) : 1;
+    const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : 10;
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+    const limit =
+      Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.floor(limitRaw)) : 10;
+    const skip = (page - 1) * limit;
+
+    const query = { isPublicVisible: true };
+
+    const [rawList, total] = await Promise.all([
+      db.read.find({
       req,
       connectionString,
       collection: "feedbacks",
-      query: { isPublicVisible: true },
-      sort: { createdAt: -1 },
-      limit: 100,
-    });
+        query,
+        sort: { overallRating: -1, createdAt: -1 },
+        skip,
+        limit,
+      }),
+      db.read.count({
+        req,
+        connectionString,
+        collection: "feedbacks",
+        query,
+      }),
+    ]);
     const list = rawList.map((doc: Record<string, unknown>) => {
       const images = doc.images as string[] | undefined;
       const imageApprovals = doc.imageApprovals as boolean[] | undefined;
@@ -202,7 +220,7 @@ export async function getPublicFeedbackHandler(req: Request, res: Response): Pro
         createdAt: doc.createdAt,
       };
     });
-    res.status(200).json({ message: "Public feedback", data: list });
+    res.status(200).json({ message: "Public feedback", data: list, total, page, limit });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
