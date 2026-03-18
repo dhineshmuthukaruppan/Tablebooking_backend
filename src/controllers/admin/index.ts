@@ -23,6 +23,7 @@ export {
 } from "./menu.handler";
 export {
   listAdminCouponsHandler,
+  getAdminCouponByIdHandler,
   createCouponHandler,
   updateCouponHandler,
   softDeleteCouponHandler,

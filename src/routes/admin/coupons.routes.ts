@@ -11,6 +11,13 @@ router.get(
   adminController.listAdminCouponsHandler
 );
 
+router.get(
+  "/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin"),
+  adminController.getAdminCouponByIdHandler
+);
+
 router.post(
   "/",
   auth.authentication.authenticate,

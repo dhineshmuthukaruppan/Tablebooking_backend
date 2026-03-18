@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { ObjectId } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
 import {
   sendAdminBookingCancellationEmail,
@@ -365,6 +365,16 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       slot?: { startTime?: string; endTime?: string };
       guestCount?: number;
       status?: string;
+      payment?: { status?: "pending" | "paid" | null };
+      coupon?: {
+        couponId?: ObjectId;
+        couponCode?: string;
+        isReserved?: boolean;
+        reservedAt?: Date | null;
+        isRedeemed?: boolean;
+        redeemedAt?: Date | null;
+        appliedPercentage?: number;
+      } | null;
     } | null;
 
     if (!existingBooking) {
@@ -431,13 +441,63 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       return;
     }
 
-    await db.update.findOneAndUpdate({
-      req,
-      connectionString,
-      collection: "bookings",
-      query,
-      update: { $set: updates },
-    });
+    // Transaction: update booking and (optionally) redeem coupon + increment coupon totalUsed
+    const dbConn = (req.app.locals as Record<string, unknown>)[connectionString + "DB"] as import("mongodb").Db | undefined;
+    const client = (req.app.locals as Record<string, unknown>)[connectionString + "CLIENT"] as MongoClient | undefined;
+    if (!dbConn || !client) {
+      res.status(500).json({ message: "Database not available" });
+      return;
+    }
+
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const bookingCol = dbConn.collection("bookings");
+        const couponsCol = dbConn.collection(db.constants.dbTables.coupons);
+        const redeemsCol = dbConn.collection("redeems");
+
+        const booking = (await bookingCol.findOne(query, { session })) as typeof existingBooking;
+        if (!booking?._id) {
+          throw new Error("Booking not found");
+        }
+
+        const isPaidUpdate = body.payment?.status === "paid";
+        const coupon = booking.coupon ?? null;
+        const canRedeem =
+          isPaidUpdate &&
+          coupon?.isReserved === true &&
+          coupon?.isRedeemed !== true &&
+          coupon?.couponId instanceof ObjectId;
+
+        const txUpdates: Record<string, unknown> = { ...updates };
+        if (canRedeem) {
+          (txUpdates as Record<string, unknown>)["coupon.isRedeemed"] = true;
+          (txUpdates as Record<string, unknown>)["coupon.redeemedAt"] = now;
+        }
+
+        await bookingCol.updateOne(query, { $set: txUpdates }, { session });
+
+        if (canRedeem) {
+          await couponsCol.updateOne(
+            { _id: coupon!.couponId as ObjectId },
+            { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
+            { session }
+          );
+
+          await redeemsCol.insertOne(
+            {
+              couponId: coupon!.couponId as ObjectId,
+              userId: booking.userId as ObjectId,
+              bookingId: booking._id as ObjectId,
+              redeemedAt: now,
+            },
+            { session }
+          );
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
 
     const nextStatus = typeof body.status === "string" ? body.status : previousStatus;
     const shouldSendConfirmationEmail =

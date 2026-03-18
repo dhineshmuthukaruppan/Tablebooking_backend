@@ -27,6 +27,8 @@ export interface CouponWeekdayConfig {
     wednesday?: number;
     thursday?: number;
     friday?: number;
+    saturday?: number;
+    sunday?: number;
   };
 }
 
@@ -70,6 +72,7 @@ export interface CouponDocument {
   expiryDate?: Date | null;
   maxUsageLimit?: number | null;
   totalUsed?: number;
+  totalReserved?: number;
   offerConfig: CouponOfferConfig;
   conditions?: CouponConditions;
   termsAndConditions?: string[];

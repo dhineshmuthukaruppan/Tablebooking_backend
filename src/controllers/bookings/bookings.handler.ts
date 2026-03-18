@@ -182,6 +182,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       res.status(401).json({ message: "Unauthorized" });
       return;
     }
+    const userIdObjectId = new ObjectId(user.id.toString());
     const body = req.body as {
       customerName?: string;
       customerEmail?: string;
@@ -191,7 +192,9 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       sectionName?: string;
       slot?: { startTime?: string; endTime?: string };
       guestCount?: number;
+      couponId?: string;
       couponCode?: string;
+      appliedPercentage?: number;
     };
     const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
     const customerEmail = typeof body.customerEmail === "string" ? body.customerEmail.trim() : (user.email ?? "").toLowerCase();
@@ -203,7 +206,12 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     const startTime = typeof slot.startTime === "string" ? slot.startTime.trim() : "";
     const endTime = typeof slot.endTime === "string" ? slot.endTime.trim() : "";
     const guestCount = typeof body.guestCount === "number" ? Math.max(1, Math.floor(body.guestCount)) : 1;
+    const couponIdStr = typeof body.couponId === "string" ? body.couponId.trim() : "";
     const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : "";
+    const appliedPercentageFromClient =
+      typeof body.appliedPercentage === "number" && Number.isFinite(body.appliedPercentage)
+        ? Math.floor(body.appliedPercentage)
+        : null;
 
     if (!customerName || !bookingDateStr || !sectionIdStr || !sectionName || !startTime || !endTime) {
       res.status(400).json({
@@ -225,6 +233,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     }
 
     const connectionString = db.constants.connectionStrings.tableBooking;
+    const now = new Date();
 
     const config = await slotConfigService.getSlotConfigForDate(req, sectionId, bookingDate);
     if (!config) {
@@ -249,48 +258,93 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     });
 
     // Optional coupon validation (percentage + conditions).
-    let appliedCoupon: { couponCode: string; appliedPercentage: number } | null = null;
+    let appliedCoupon:
+      | {
+          couponId: ObjectId;
+          couponCode: string;
+          isReserved: true;
+          isRedeemed: false;
+          reservedAt: Date;
+          redeemedAt: null;
+          appliedPercentage: number;
+        }
+      | null = null;
+    let shouldInsertRedeemReservation = false;
     if (couponCode) {
+      let couponObjectId: ObjectId | null = null;
+      if (couponIdStr && ObjectId.isValid(couponIdStr)) {
+        couponObjectId = new ObjectId(couponIdStr);
+      }
+
+      type CouponForBookingValidation = {
+        _id?: ObjectId;
+        oneTimePerUser?: boolean | null;
+        expiryDate?: Date | null;
+        maxUsageLimit?: number | null;
+        totalUsed?: number | null;
+        totalReserved?: number | null;
+        offerConfig?: {
+          defaultOffer?: number;
+          customDates?: { date: Date; percentage: number }[];
+          specialDateRanges?: {
+            isEnabled?: boolean;
+            startDateTime?: Date;
+            endDateTime?: Date;
+            percentage: number;
+          }[];
+          weekday?: { isEnabled?: boolean; days?: Record<string, number | undefined> };
+        };
+        conditions?: {
+          minGuestCount?: number;
+          minBookingAmount?: number;
+          allowedSections?: string[];
+          allowedWeekdays?: string[];
+          firstTimeUsersOnly?: boolean;
+          validBookingTimeRange?: { startTime: string; endTime: string };
+        };
+      } & Record<string, unknown>;
+
       const coupon = (await db.read.findOne({
         req,
         connectionString,
         collection: db.constants.dbTables.coupons,
-        query: { code: couponCode, isActive: true, deletedAt: null },
-      })) as
-        | ({
-            expiryDate?: Date | null;
-            maxUsageLimit?: number | null;
-            totalUsed?: number | null;
-            offerConfig?: {
-              defaultOffer?: number;
-              customDates?: { date: Date; percentage: number }[];
-              specialDateRanges?: {
-                isEnabled?: boolean;
-                startDateTime?: Date;
-                endDateTime?: Date;
-                percentage: number;
-              }[];
-              weekday?: { isEnabled?: boolean; days?: Record<string, number | undefined> };
-            };
-            conditions?: {
-              minGuestCount?: number;
-              minBookingAmount?: number;
-              allowedSections?: string[];
-              allowedWeekdays?: string[];
-              firstTimeUsersOnly?: boolean;
-              validBookingTimeRange?: { startTime: string; endTime: string };
-            };
-          } & Record<string, unknown>)
-        | null;
+        query: couponObjectId
+          ? { _id: couponObjectId, code: couponCode, isActive: true, deletedAt: null }
+          : { code: couponCode, isActive: true, deletedAt: null },
+      })) as CouponForBookingValidation | null;
 
       const invalidResponse = () => {
         res.status(400).json({ message: "Coupon expired or invalid for this booking" });
         return true;
       };
 
+
       if (!coupon) {
         if (invalidResponse()) return;
       } else {
+        const couponId = coupon._id instanceof ObjectId ? coupon._id : null;
+        if (!couponId) {
+          invalidResponse();
+          return;
+        }
+
+        if (coupon.oneTimePerUser === true) {
+          const existingRedeem = await db.read.findOne({
+            req,
+            connectionString,
+            collection: db.constants.dbTables.redeems,
+            query: { couponId, userId: userIdObjectId },
+            projection: { _id: 1 },
+          });
+          if (existingRedeem) {
+            res.status(400).json({
+              message: "Already redeemed. Please try any other coupons.",
+            });
+            return;
+          }
+          shouldInsertRedeemReservation = true;
+        }
+
         if (coupon.expiryDate instanceof Date && !Number.isNaN(coupon.expiryDate.getTime())) {
           if (coupon.expiryDate.getTime() < bookingDate.getTime()) {
             if (invalidResponse()) return;
@@ -391,7 +445,21 @@ export async function createBookingHandler(req: Request, res: Response): Promise
           if (invalidResponse()) return;
         }
 
-        appliedCoupon = { couponCode, appliedPercentage: percentage };
+        // Client/server mismatch guard (prevents stale UI / tampering).
+        if (appliedPercentageFromClient !== null && appliedPercentageFromClient !== Math.floor(percentage)) {
+          res.status(400).json({ message: "Coupon mismatch. Please select the coupon again." });
+          return;
+        }
+
+        appliedCoupon = {
+          couponId,
+          couponCode,
+          isReserved: true,
+          isRedeemed: false,
+          reservedAt: now,
+          redeemedAt: null,
+          appliedPercentage: percentage,
+        };
       }
     }
 
@@ -424,7 +492,6 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       }
     }
 
-    const now = new Date();
     const bookingNumber = await bookingSequence.getNextBookingNumber(req);
     const doc = {
       bookingNumber,
@@ -460,7 +527,37 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     });
     const bookingId = insertResult?.insertedId;
 
+    if (shouldInsertRedeemReservation && appliedCoupon?.couponId && bookingId) {
+      void db.create.insertOne({
+        req,
+        connectionString,
+        collection: db.constants.dbTables.redeems,
+        payload: {
+          couponId: appliedCoupon.couponId,
+          userId: userIdObjectId,
+          bookingId,
+          reservedAt: now,
+          redeemedAt: null,
+        },
+      });
+    }
+
     const responseDoc = bookingId ? { ...doc, _id: bookingId } : doc;
+
+    // Mark coupon as reserved (+1) after booking is created.
+    if (appliedCoupon?.couponId) {
+      void db.update
+        .updateOne({
+          req,
+          connectionString,
+          collection: db.constants.dbTables.coupons,
+          query: { _id: appliedCoupon.couponId },
+          update: { $inc: { totalReserved: 1 }, $set: { updatedAt: now } },
+        })
+        .catch(() => {
+          // non-blocking; booking remains valid even if analytics counters fail
+        });
+    }
 
     logger.info("Booking created by user", {
       bookingId: bookingId ? bookingId.toString() : null,

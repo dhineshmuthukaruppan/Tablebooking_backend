@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:clear": "tsx src/scripts/clearCollections.ts"
   },
   "keywords": [],
   "author": "",

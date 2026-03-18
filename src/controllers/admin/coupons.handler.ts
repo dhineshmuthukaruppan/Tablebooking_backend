@@ -80,7 +80,7 @@ function normalizeOfferConfig(raw: any): CouponOfferConfig {
     const isEnabled = Boolean(raw.weekday.isEnabled);
     const daysRaw = raw.weekday.days ?? {};
     const days: CouponWeekdayConfig["days"] = {};
-    (["monday", "tuesday", "wednesday", "thursday", "friday"] as const).forEach((day) => {
+    (["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const).forEach((day) => {
       const pct = normalizePercentage(daysRaw[day]);
       if (typeof pct === "number") {
         days[day] = pct;
@@ -139,6 +139,10 @@ export async function listAdminCouponsHandler(req: Request, res: Response): Prom
     const connectionString = db.constants.connectionStrings.tableBooking;
 
     const query: Record<string, unknown> = {};
+    const statusRaw = Array.isArray(req.query.status) ? req.query.status[0] : req.query.status;
+    const status = typeof statusRaw === "string" ? statusRaw.trim().toLowerCase() : "";
+    if (status === "active") query.isActive = true;
+    if (status === "inactive") query.isActive = false;
     const createdAtFilter = buildDateFilter(req.query.date);
     if (createdAtFilter) {
       query.createdAt = createdAtFilter;
@@ -173,6 +177,30 @@ export async function listAdminCouponsHandler(req: Request, res: Response): Prom
         limit,
       },
     });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function getAdminCouponByIdHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id || typeof id !== "string" || !ObjectId.isValid(id)) {
+      res.status(400).json({ message: "Invalid coupon ID" });
+      return;
+    }
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const doc = await db.read.findOne({
+      req,
+      connectionString,
+      collection: db.constants.dbTables.coupons,
+      query: { _id: new ObjectId(id) },
+    });
+    if (!doc) {
+      res.status(404).json({ message: "Coupon not found" });
+      return;
+    }
+    res.status(200).json({ message: "Coupon", data: doc });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -225,6 +253,7 @@ export async function createCouponHandler(req: Request, res: Response): Promise<
       expiryDate,
       maxUsageLimit: maxUsageLimit ?? null,
       totalUsed: 0,
+      totalReserved:0,
       offerConfig,
       conditions,
       termsAndConditions: Array.isArray(body.termsAndConditions)
@@ -291,7 +320,9 @@ export async function updateCouponHandler(req: Request, res: Response): Promise<
         }
       }
     }
-    if (typeof body.maxUsageLimit === "number" && Number.isFinite(body.maxUsageLimit)) {
+    if (body.maxUsageLimit === null) {
+      update.maxUsageLimit = null;
+    } else if (typeof body.maxUsageLimit === "number" && Number.isFinite(body.maxUsageLimit)) {
       update.maxUsageLimit = body.maxUsageLimit;
     }
     if (body.offerConfig !== undefined) {
