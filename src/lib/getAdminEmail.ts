@@ -1,7 +1,7 @@
 import type { Request } from "express";
 import db from "../databaseUtilities";
 
-const GUEST_DATE_QUERY = { type: "default" } as const;
+const GENERAL_MASTER_QUERY = { type: "default" } as const;
 
 function normalizeEmail(email: unknown): string | null {
   if (typeof email !== "string") return null;
@@ -13,7 +13,7 @@ function normalizeEmail(email: unknown): string | null {
  * Returns the admin contact email for notifications.
  *
  * Resolution order:
- * 1. guest_date.type === "default".adminEmail (if present and valid)
+ * 1. general_master.type === "default".adminEmail (if present and valid)
  * 2. First admin user (role: "admin") with a non-empty email, sorted by createdAt ascending
  * 3. null when nothing is found
  */
@@ -21,16 +21,16 @@ export async function getAdminEmail(
   req: Request,
   connectionString: string
 ): Promise<string | null> {
-  // 1) Try guest_date config adminEmail
-  const guestDateConfig = (await db.read.findOne({
+  // 1) Try general_master config adminEmail
+  const generalMasterConfig = (await db.read.findOne({
     req,
     connectionString,
-    collection: db.constants.dbTables.guest_date,
-    query: GUEST_DATE_QUERY,
+    collection: db.constants.dbTables.general_master,
+    query: GENERAL_MASTER_QUERY,
     projection: { adminEmail: 1 },
   })) as { adminEmail?: unknown } | null;
 
-  const configEmail = normalizeEmail(guestDateConfig?.adminEmail);
+  const configEmail = normalizeEmail(generalMasterConfig?.adminEmail);
   if (configEmail) {
     return configEmail;
   }

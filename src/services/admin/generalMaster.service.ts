@@ -62,7 +62,7 @@ export async function resolveAdminContactEmail(
 
     return adminUserEmail;
   }
-  // No explicit email provided – resolve via shared helper (guest_date, then users).
+  // No explicit email provided – resolve via shared helper (general_master, then users).
   const adminEmail = await getAdminEmail(req, db.constants.connectionStrings.tableBooking);
   if (!adminEmail) {
     throw new GeneralMasterConfigError(
