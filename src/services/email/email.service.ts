@@ -1,6 +1,7 @@
 import type { Request } from "express";
 import type { BookingConfirmationEmailPayload } from "../../types/email";
-import { resolveAdminContactEmail } from "../admin/guestDates.service";
+import db from "../../databaseUtilities";
+import { getAdminEmail } from "../../lib/getAdminEmail";
 import { generateBookingConfirmationHTML } from "./templates/bookingConfirmationTemplate";
 import { generateBookingAdminStatusHTML } from "./templates/bookingAdminStatusTemplate";
 import { generateBookingCancellationHTML } from "./templates/bookingCancellationTemplate";
@@ -27,7 +28,7 @@ async function resolveAdminRecipient(
   }
 
   try {
-    return await resolveAdminContactEmail(req);
+    return await getAdminEmail(req, db.constants.connectionStrings.tableBooking);
   } catch (error) {
     console.error(`[email] Failed to resolve admin contact email for ${event}`, error);
     return null;

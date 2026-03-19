@@ -11,6 +11,8 @@ import {
   updateUserByFirebaseUid,
   upsertPhoneCredential,
 } from "../../lib/auth/phoneAuth.repository";
+import { getNextUserSequence } from "../../lib/getNextUserSequence";
+import db from "../../databaseUtilities";
 
 export interface RegisterBody {
   idToken?: string;
@@ -75,13 +77,15 @@ export async function registerHandler(req: Request, res: Response): Promise<void
       const authProvider: UserDocument["authProvider"] =
         normalizedPhone && !email ? "phone" : "email";
 
+      const role: UserDocument["role"] = email === EMAIL ? "admin" : "user";
+
       const newUser: UserDocument = {
         firebaseUid: decoded.uid,
         ...(email ? { email } : {}),
         phoneNumber: normalizedPhone,
         ...(displayNameTrimmed && { displayName: displayNameTrimmed }),
-        role: email===EMAIL?"admin":"user",
-        isSystemAdmin: email===EMAIL?true:false,
+        role,
+        isSystemAdmin: email === EMAIL ? true : false,
         status: "active",
         isEmailVerified,
         isPhoneVerified,
@@ -90,6 +94,15 @@ export async function registerHandler(req: Request, res: Response): Promise<void
         createdAt: now,
         updatedAt: now,
       };
+
+      if (role === "user") {
+        const userSequence = await getNextUserSequence(
+          req,
+          db.constants.connectionStrings.tableBooking
+        );
+        newUser.userSequence = userSequence;
+      }
+
       await insertUser(req, newUser);
       user = await findUserByFirebaseUid(req, decoded.uid);
     } else {
@@ -112,6 +125,16 @@ export async function registerHandler(req: Request, res: Response): Promise<void
       if (normalizedPhone && !user.authProvider) {
         updateFields.authProvider = "phone";
       }
+
+      // Backfill userSequence for existing "user" role documents that predate the sequence feature.
+      if (user.role === "user" && (user as UserDocument).userSequence == null) {
+        const userSequence = await getNextUserSequence(
+          req,
+          db.constants.connectionStrings.tableBooking
+        );
+        updateFields.userSequence = userSequence;
+      }
+
       await updateUserByFirebaseUid(req, decoded.uid, updateFields);
       user = await findUserByFirebaseUid(req, decoded.uid);
     }

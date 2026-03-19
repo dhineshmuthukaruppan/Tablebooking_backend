@@ -1,10 +1,11 @@
 import type { Request } from "express";
 import {
   findAdminUserByEmail,
-  findFirstSystemAdminUser,
   findGuestDatesConfig,
   upsertGuestDatesConfig,
 } from "../../repositories/guestDates.repository";
+import { getAdminEmail } from "../../lib/getAdminEmail";
+import db from "../../databaseUtilities";
 
 export interface GuestDatesConfig {
   maxGuestCount: number;
@@ -39,11 +40,6 @@ function normalizeEmail(email?: string | null): string | null {
   return normalized ? normalized : null;
 }
 
-async function getSystemAdminEmail(req: Request): Promise<string | null> {
-  const systemAdmin = await findFirstSystemAdminUser(req);
-  return normalizeEmail(systemAdmin?.email);
-}
-
 export async function resolveAdminContactEmail(
   req: Request,
   requestedAdminEmail?: string | null
@@ -66,38 +62,31 @@ export async function resolveAdminContactEmail(
     return adminUserEmail;
   }
 
-  // No explicit email provided – first try the persisted guest_date.adminEmail.
-  const configDoc = await findGuestDatesConfig(req);
-  const configAdminEmail = normalizeEmail(configDoc?.adminEmail);
-  if (configAdminEmail) {
-    return configAdminEmail;
-  }
-
-  // Fallback: first system admin user.
-  const systemAdminEmail = await getSystemAdminEmail(req);
-  if (!systemAdminEmail) {
+  // No explicit email provided – resolve via shared helper (guest_date, then users).
+  const adminEmail = await getAdminEmail(req, db.constants.connectionStrings.tableBooking);
+  if (!adminEmail) {
     throw new GuestDatesConfigError(
       "No system admin email is configured. Please create a system admin user first.",
       500
     );
   }
 
-  return systemAdminEmail;
+  return adminEmail;
 }
 
 export async function getGuestDatesConfig(
   req: Request
 ): Promise<GuestDatesConfig> {
-  const [doc, systemAdminEmail] = await Promise.all([
+  const [doc, fallbackAdminEmail] = await Promise.all([
     findGuestDatesConfig(req),
-    getSystemAdminEmail(req),
+    getAdminEmail(req, db.constants.connectionStrings.tableBooking),
   ]);
 
   return {
     maxGuestCount: doc?.maxGuestCount ?? 0,
     maxDaysCount: doc?.maxDaysCount ?? 0,
     allowBookingWhenSlotFull: doc?.allowBookingWhenSlotFull ?? false,
-    adminEmail: normalizeEmail(doc?.adminEmail) ?? systemAdminEmail,
+    adminEmail: normalizeEmail(doc?.adminEmail) ?? fallbackAdminEmail,
   };
 }
 
