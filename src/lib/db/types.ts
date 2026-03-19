@@ -15,6 +15,7 @@ export interface UserDocument {
   isPhoneVerified: boolean;
   authProvider?: "email" | "phone";
   isEligibleForCoupons?: boolean;
+  userSequence?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }

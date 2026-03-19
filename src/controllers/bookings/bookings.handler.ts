@@ -6,6 +6,8 @@ import * as slotInventory from "../../services/slotInventory";
 import * as slotConfigService from "../../services/slotConfig";
 import {
   sendAdminBookingCancellationEmail,
+  sendAdminBookingConfirmationEmail,
+  sendAdminPhoneUserBookingEmail,
   sendBookingCancellationEmail,
   sendBookingConfirmationEmail,
 } from "../../services/email/email.service";
@@ -197,8 +199,12 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       appliedPercentage?: number;
     };
     const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
-    const customerEmail = typeof body.customerEmail === "string" ? body.customerEmail.trim() : (user.email ?? "").toLowerCase();
-    const customerPhone = typeof body.customerPhone === "string" ? body.customerPhone.trim() : "";
+    const customerEmail =
+      typeof body.customerEmail === "string"
+        ? body.customerEmail.trim()
+        : (user.email ?? "").toLowerCase();
+    const customerPhone =
+      typeof body.customerPhone === "string" ? body.customerPhone.trim() : "";
     const bookingDateStr = typeof body.bookingDate === "string" ? body.bookingDate.trim() : "";
     const sectionIdStr = typeof body.sectionId === "string" ? body.sectionId.trim() : "";
     const sectionName = typeof body.sectionName === "string" ? body.sectionName.trim() : "";
@@ -544,6 +550,10 @@ export async function createBookingHandler(req: Request, res: Response): Promise
 
     const responseDoc = bookingId ? { ...doc, _id: bookingId } : doc;
 
+    const notificationPhone =
+      typeof user.phoneNumber === "string" ? user.phoneNumber.trim() : "";
+    const isPhoneAuth = user.authProvider === "phone";
+
     // Mark coupon as reserved (+1) after booking is created.
     if (appliedCoupon?.couponId) {
       void db.update
@@ -563,10 +573,12 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       bookingId: bookingId ? bookingId.toString() : null,
       status,
       emailTriggered: Boolean(customerEmail && status === "confirmed"),
-      smsTriggered: Boolean(customerPhone && req.user?.role === "user" && status === "confirmed"),
+      smsTriggered: Boolean(
+        notificationPhone && isPhoneAuth && req.user?.role === "user" && status === "confirmed"
+      ),
     });
 
-    if (customerEmail && status === "confirmed") {
+    if (customerEmail && status === "confirmed" && !isPhoneAuth) {
       const bookingDateDisplay = formatBookingDate(bookingDate);
 
       const emailPayload = {
@@ -588,9 +600,15 @@ export async function createBookingHandler(req: Request, res: Response): Promise
         // eslint-disable-next-line no-console
         console.error("[booking] Booking confirmation email failed", err);
       });
+
+      // Also notify the admin contact for auto-confirmed bookings (email-auth users).
+      void sendAdminBookingConfirmationEmail(req, emailPayload).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[booking] Admin booking confirmation email failed", err);
+      });
     }
 
-    if (req.user?.role === "user" && customerPhone) {
+    if (req.user?.role === "user" && isPhoneAuth && notificationPhone) {
       const smsPayload = buildBookingSmsData({
         bookingId: bookingId ? bookingId.toString() : undefined,
         bookingDate,
@@ -604,8 +622,28 @@ export async function createBookingHandler(req: Request, res: Response): Promise
           bookingId: bookingId ? bookingId.toString() : null,
         });
         void sendSMS({
-          to: customerPhone,
+          to: notificationPhone,
           body: bookingConfirmedSMS(smsPayload),
+        });
+
+        const adminEmailPayload = {
+          customerEmail: undefined,
+          customerId: user.id.toString(),
+          customerName,
+          customerPhone: notificationPhone || undefined,
+          bookingId: bookingId ? bookingId.toString() : "",
+          bookingDate: formatBookingDate(bookingDate),
+          startTime,
+          endTime,
+          guests: guestCount,
+          section: sectionName,
+          venueName: "The Sheesha Factory",
+          location: "RS Puram, Coimbatore",
+        };
+
+        void sendAdminPhoneUserBookingEmail(req, adminEmailPayload).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error("[booking] Admin phone-user booking email failed", err);
         });
       }
     }
@@ -655,7 +693,6 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
       customerEmail?: string;
       customerName?: string;
       sectionName?: string;
-      customerPhone?: string;
       slot?: { startTime?: string; endTime?: string };
       guestCount?: number;
     };
@@ -686,16 +723,21 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
 
     if (
       currentStatus === "pending" &&
-      typeof b.customerEmail === "string" &&
-      b.customerEmail.trim() &&
       typeof b.customerName === "string" &&
+      b.customerName &&
       b.bookingDate &&
       b.slot?.startTime &&
       b.slot?.endTime &&
-      typeof b.sectionName === "string"
+      typeof b.sectionName === "string" &&
+      b.sectionName
     ) {
+      const trimmedEmail =
+        typeof b.customerEmail === "string" && b.customerEmail.trim()
+          ? b.customerEmail.trim()
+          : undefined;
+
       const emailPayload = {
-        customerEmail: b.customerEmail.trim(),
+        customerEmail: trimmedEmail,
         customerId: userId.toString(),
         customerName: b.customerName,
         bookingId: id,
@@ -710,10 +752,12 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
 
       console.log("EMAIL DEBUG → cancellation payload", emailPayload);
 
-      void sendBookingCancellationEmail(emailPayload).catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error("[booking] Booking cancellation email failed", err);
-      });
+      if (trimmedEmail) {
+        void sendBookingCancellationEmail(emailPayload).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error("[booking] Booking cancellation email failed", err);
+        });
+      }
 
       void sendAdminBookingCancellationEmail(req, emailPayload).catch((err) => {
         // eslint-disable-next-line no-console
@@ -721,18 +765,24 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
       });
     }
 
+    const notificationPhone =
+      typeof req.user?.phoneNumber === "string"
+        ? req.user.phoneNumber.trim()
+        : "";
+    const isPhoneAuth = req.user?.authProvider === "phone";
+
     if (
       req.user?.role === "user" &&
+      isPhoneAuth &&
       currentStatus === "pending" &&
-      typeof b.customerPhone === "string" &&
-      b.customerPhone.trim() &&
+      notificationPhone &&
       b.bookingDate &&
       b.slot?.startTime &&
       b.slot?.endTime
     ) {
       logger.info("SMS Trigger → Booking Cancelled", { bookingId: id });
       void sendSMS({
-        to: b.customerPhone.trim(),
+        to: notificationPhone,
         body: bookingCancelledSMS(
           buildBookingSmsData({
             bookingDate: b.bookingDate,

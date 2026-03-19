@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { MongoClient, ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import { getAdminEmail } from "../../lib/getAdminEmail";
 import {
   sendAdminBookingCancellationEmail,
   sendAdminBookingConfirmationEmail,
@@ -518,33 +519,7 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       existingBooking.slot.endTime.trim()
     ) {
 
-      const guestDateConfig = (await db.read.findOne({
-        req,
-        connectionString,
-        collection: "guest_date",
-        query: { type: "default" },
-        projection: { adminEmail: 1 },
-      })) as { adminEmail?: string | null } | null;
-      let ADMIN_EMAIL: string | null =
-        (typeof guestDateConfig?.adminEmail === "string" && guestDateConfig.adminEmail.trim())
-          ? guestDateConfig.adminEmail.trim()
-          : null;
-      if (!ADMIN_EMAIL) {
-        const adminUsers = (await db.read.find({
-          req,
-          connectionString,
-          collection: "users",
-          query: { role: "admin", email: { $exists: true, $nin: [null, ""] } },
-          projection: { email: 1 },
-          sort: { createdAt: 1 },
-          limit: 1,
-        })) as { email?: string }[];
-        const firstAdmin = adminUsers?.[0];
-        ADMIN_EMAIL =
-          typeof firstAdmin?.email === "string" && firstAdmin.email.trim()
-            ? firstAdmin.email.trim()
-            : null;
-      }
+      const ADMIN_EMAIL = await getAdminEmail(req, connectionString);
       const emailPayload = {
         customerEmail: existingBooking.customerEmail?.trim(),
         adminEmail: ADMIN_EMAIL ?? undefined,
