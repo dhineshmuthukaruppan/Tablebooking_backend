@@ -1,8 +1,8 @@
 export {
-  getGuestDatesConfigHandler,
-  updateGuestDatesConfigHandler,
-  updateGuestDatesAdminEmailHandler,
-} from "./guest-dates.handler";
+  getGeneralMasterConfigHandler,
+  updateGeneralMasterConfigHandler,
+  updateGeneralMasterAdminEmailHandler,
+  } from "./general-master.handler";
 export {
   getMealTimeListHandler,
   addMealTimeHandler,

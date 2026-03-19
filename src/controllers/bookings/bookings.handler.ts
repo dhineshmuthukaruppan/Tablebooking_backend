@@ -16,7 +16,7 @@ import {
 } from "../../services/smsTemplates";
 import * as bookingSequence from "../../services/bookingSequence";
 
-const GUEST_DATE_QUERY = { type: "default" } as const;
+const GENERAL_MASTER_QUERY = { type: "default" } as const;
 
 function formatBookingDate(date: Date): string {
   return date.toLocaleDateString("en-IN", {
@@ -477,8 +477,8 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       const guestDateDoc = await db.read.findOne({
         req,
         connectionString,
-        collection: "guest_date",
-        query: GUEST_DATE_QUERY,
+        collection: db.constants.dbTables.general_master,
+        query: GENERAL_MASTER_QUERY,
       }) as { allowBookingWhenSlotFull?: boolean } | null;
       const allowWhenFull = guestDateDoc?.allowBookingWhenSlotFull === true;
       if (allowWhenFull) {
@@ -831,7 +831,7 @@ export async function getSlotsHandler(req: Request, res: Response): Promise<void
   }
 }
 
-/** Returns guest-dates config and active meal-time sections for the booking flow. When bookingDate query is present, returns date-aware slot config per section (data.sections). */
+/** Returns general master config and active meal-time sections for the booking flow. When bookingDate query is present, returns date-aware slot config per section (data.sections). */
 export async function getBookingConfigHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
@@ -842,13 +842,13 @@ export async function getBookingConfigHandler(req: Request, res: Response): Prom
       db.read.findOne({
         req,
         connectionString,
-        collection: "guest_date",
-        query: GUEST_DATE_QUERY,
+        collection: db.constants.dbTables.general_master,
+        query: GENERAL_MASTER_QUERY,
       }),
       db.read.find({
         req,
         connectionString,
-        collection: "meal_time_master",
+        collection: db.constants.dbTables.meal_time_master,
         query: { isActive: true },
         sort: { startTime: 1 },
       }),

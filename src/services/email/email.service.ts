@@ -1,6 +1,6 @@
 import type { Request } from "express";
 import type { BookingConfirmationEmailPayload } from "../../types/email";
-import { resolveAdminContactEmail } from "../admin/guestDates.service";
+import { resolveAdminContactEmail } from "../admin/generalMaster.service";
 import { generateBookingConfirmationHTML } from "./templates/bookingConfirmationTemplate";
 import { generateBookingAdminStatusHTML } from "./templates/bookingAdminStatusTemplate";
 import { generateBookingCancellationHTML } from "./templates/bookingCancellationTemplate";

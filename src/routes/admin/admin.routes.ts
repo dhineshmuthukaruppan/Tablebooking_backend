@@ -1,5 +1,5 @@
 /**
- * Admin routes – dashboard, users (list, update), master (guest-dates, meal-time), bookings (patch).
+ * Admin routes – dashboard, users (list, update), master (general-master, meal-time), bookings (patch).
  * RBAC: dashboard requires admin or staff; users list/patch require admin.
  */
 import { Router } from "express";

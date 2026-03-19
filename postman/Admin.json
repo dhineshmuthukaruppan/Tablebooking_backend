@@ -105,7 +105,7 @@
           "name": "Master",
           "item": [
             {
-              "name": "Guest dates – get config",
+              "name": "General master – get config",
               "request": {
                 "method": "GET",
                 "header": [
@@ -116,15 +116,15 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/master/guest-dates",
+                  "raw": "{{baseUrl}}/admin/master/general-master",
                   "host": ["{{baseUrl}}"],
-                  "path": ["admin", "master", "guest-dates"]
+                  "path": ["admin", "master", "general-master"]
                 },
-                "description": "GET /admin/master/guest-dates — Fetch guest-dates configuration."
+                "description": "GET /admin/master/general-master — Fetch general-master configuration."
               }
             },
             {
-              "name": "Guest dates – update config",
+              "name": "General master – update config",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -144,11 +144,11 @@
                   "raw": "{\n  \"maxGuestsPerDay\": 100,\n  \"blockedDates\": [\n    \"2025-12-25\",\n    \"2026-01-01\"\n  ]\n}"
                 },
                 "url": {
-                  "raw": "{{baseUrl}}/admin/master/guest-dates",
+                  "raw": "{{baseUrl}}/admin/master/general-master",
                   "host": ["{{baseUrl}}"],
-                  "path": ["admin", "master", "guest-dates"]
+                  "path": ["admin", "master", "general-master"]
                 },
-                "description": "PUT /admin/master/guest-dates — Update guest-dates configuration. Body shape should match backend config."
+                "description": "PUT /admin/master/general-master — Update general-master configuration. Body shape should match backend config."
               }
             },
             {

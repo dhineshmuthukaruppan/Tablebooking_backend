@@ -1,19 +1,19 @@
 import type { Request, Response } from "express";
 import {
-  getGuestDatesConfig,
-  isGuestDatesConfigError,
-  updateGuestDatesConfig,
-} from "../../../services/admin/guestDates.service";
+  getGeneralMasterConfig,
+  isGeneralMasterConfigError,
+  updateGeneralMasterConfig,
+} from "../../../services/admin/generalMaster.service";
 
-export async function getGuestDatesConfigHandler(req: Request, res: Response): Promise<void> {
+export async function getGeneralMasterConfigHandler(req: Request, res: Response): Promise<void> {
   try {
-    const config = await getGuestDatesConfig(req);
+    const config = await getGeneralMasterConfig(req);
     res.status(200).json({
-      message: "Guest and dates config",
+      message: "General master config",
       data: config,
     });
   } catch (error) {
-    if (isGuestDatesConfigError(error)) {
+    if (isGeneralMasterConfigError(error)) {
       res.status(error.statusCode).json({ message: error.message });
       return;
     }
@@ -22,7 +22,7 @@ export async function getGuestDatesConfigHandler(req: Request, res: Response): P
   }
 }
 
-export async function updateGuestDatesConfigHandler(req: Request, res: Response): Promise<void> {
+export async function updateGeneralMasterConfigHandler(req: Request, res: Response): Promise<void> {
   try {
     const body = req.body as {
       maxGuestCount?: number;
@@ -39,7 +39,7 @@ export async function updateGuestDatesConfigHandler(req: Request, res: Response)
         ? body.adminEmail
         : undefined;
 
-    const config = await updateGuestDatesConfig(req, {
+    const config = await updateGeneralMasterConfig(req, {
       maxGuestCount,
       maxDaysCount,
       allowBookingWhenSlotFull,
@@ -47,11 +47,11 @@ export async function updateGuestDatesConfigHandler(req: Request, res: Response)
     });
 
     res.status(200).json({
-      message: "Guest and dates config updated",
+      message: "General master config updated",
       data: config,
     });
   } catch (error) {
-    if (isGuestDatesConfigError(error)) {
+    if (isGeneralMasterConfigError(error)) {
       res.status(error.statusCode).json({ message: error.message });
       return;
     }
@@ -60,7 +60,7 @@ export async function updateGuestDatesConfigHandler(req: Request, res: Response)
   }
 }
 
-export async function updateGuestDatesAdminEmailHandler(
+export async function updateGeneralMasterAdminEmailHandler(
   req: Request,
   res: Response
 ): Promise<void> {
@@ -72,7 +72,7 @@ export async function updateGuestDatesAdminEmailHandler(
       return;
     }
 
-    const config = await updateGuestDatesConfig(req, {
+    const config = await updateGeneralMasterConfig(req, {
       adminEmail:
         typeof body.adminEmail === "string" || body.adminEmail === null
           ? body.adminEmail
@@ -84,7 +84,7 @@ export async function updateGuestDatesAdminEmailHandler(
       data: config,
     });
   } catch (error) {
-    if (isGuestDatesConfigError(error)) {
+    if (isGeneralMasterConfigError(error)) {
       res.status(error.statusCode).json({ message: error.message });
       return;
     }

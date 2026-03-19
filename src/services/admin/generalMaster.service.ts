@@ -2,31 +2,31 @@ import type { Request } from "express";
 import {
   findAdminUserByEmail,
   findFirstSystemAdminUser,
-  findGuestDatesConfig,
-  upsertGuestDatesConfig,
-} from "../../repositories/guestDates.repository";
+  findGeneralMasterConfig,
+  upsertGeneralMasterConfig,
+} from "../../repositories/generalMaster.repository";
 
-export interface GuestDatesConfig {
+export interface GeneralMasterConfig {
   maxGuestCount: number;
   maxDaysCount: number;
   allowBookingWhenSlotFull: boolean;
   adminEmail: string | null;
 }
 
-export interface UpdateGuestDatesConfigInput {
+export interface UpdateGeneralMasterConfigInput {
   maxGuestCount?: number;
   maxDaysCount?: number;
   allowBookingWhenSlotFull?: boolean;
   adminEmail?: string | null;
 }
 
-class GuestDatesConfigError extends Error {
+class GeneralMasterConfigError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number
   ) {
     super(message);
-    this.name = "GuestDatesConfigError";
+    this.name = "GeneralMasterConfigError";
   }
 }
 
@@ -53,7 +53,7 @@ export async function resolveAdminContactEmail(
   if (!normalizedRequestedEmail) {
     const systemAdminEmail = await getSystemAdminEmail(req);
     if (!systemAdminEmail) {
-      throw new GuestDatesConfigError(
+      throw new GeneralMasterConfigError(
         "No system admin email is configured. Please create a system admin user first.",
         500
       );
@@ -66,7 +66,7 @@ export async function resolveAdminContactEmail(
   const adminUserEmail = normalizeEmail(adminUser?.email);
 
   if (!adminUserEmail) {
-    throw new GuestDatesConfigError(
+    throw new GeneralMasterConfigError(
       "Selected admin contact email must belong to an admin user.",
       400
     );
@@ -75,11 +75,11 @@ export async function resolveAdminContactEmail(
   return adminUserEmail;
 }
 
-export async function getGuestDatesConfig(
+export async function getGeneralMasterConfig(
   req: Request
-): Promise<GuestDatesConfig> {
+): Promise<GeneralMasterConfig> {
   const [doc, systemAdminEmail] = await Promise.all([
-    findGuestDatesConfig(req),
+    findGeneralMasterConfig(req),
     getSystemAdminEmail(req),
   ]);
 
@@ -91,10 +91,10 @@ export async function getGuestDatesConfig(
   };
 }
 
-export async function updateGuestDatesConfig(
+export async function updateGeneralMasterConfig(
   req: Request,
-  payload: UpdateGuestDatesConfigInput
-): Promise<GuestDatesConfig> {
+  payload: UpdateGeneralMasterConfigInput
+): Promise<GeneralMasterConfig> {
   const updateFields: Record<string, unknown> = {
     updatedAt: new Date(),
   };
@@ -113,18 +113,18 @@ export async function updateGuestDatesConfig(
   }
 
   if (Object.keys(updateFields).length <= 1) {
-    throw new GuestDatesConfigError(
+      throw new GeneralMasterConfigError(
       "Provide maxGuestCount, maxDaysCount, allowBookingWhenSlotFull and/or adminEmail.",
       400
     );
   }
 
-  await upsertGuestDatesConfig(req, updateFields);
-  return getGuestDatesConfig(req);
+  await upsertGeneralMasterConfig(req, updateFields);
+  return getGeneralMasterConfig(req);
 }
 
-export function isGuestDatesConfigError(
+export function isGeneralMasterConfigError(
   error: unknown
-): error is GuestDatesConfigError {
-  return error instanceof GuestDatesConfigError;
+): error is GeneralMasterConfigError {
+  return error instanceof GeneralMasterConfigError;
 }
