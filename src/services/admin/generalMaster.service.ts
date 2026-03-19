@@ -52,11 +52,6 @@ export async function resolveAdminContactEmail(
   if (normalizedRequestedEmail) {
     const adminUser = await findAdminUserByEmail(req, normalizedRequestedEmail);
     const adminUserEmail = normalizeEmail(adminUser?.email);
-  // When an explicit value is provided (e.g. from Admin Contact Email save),
-  // validate that it belongs to an admin user.
-  if (normalizedRequestedEmail) {
-    const adminUser = await findAdminUserByEmail(req, normalizedRequestedEmail);
-    const adminUserEmail = normalizeEmail(adminUser?.email);
 
     if (!adminUserEmail) {
       throw new GeneralMasterConfigError(
