@@ -1,10 +1,11 @@
 import type { Request } from "express";
 import {
   findAdminUserByEmail,
-  findFirstSystemAdminUser,
   findGeneralMasterConfig,
   upsertGeneralMasterConfig,
 } from "../../repositories/generalMaster.repository";
+import { getAdminEmail } from "../../lib/getAdminEmail";
+import db from "../../databaseUtilities";
 
 export interface GeneralMasterConfig {
   maxGuestCount: number;
@@ -39,10 +40,6 @@ function normalizeEmail(email?: string | null): string | null {
   return normalized ? normalized : null;
 }
 
-async function getSystemAdminEmail(req: Request): Promise<string | null> {
-  const systemAdmin = await findFirstSystemAdminUser(req);
-  return normalizeEmail(systemAdmin?.email);
-}
 
 export async function resolveAdminContactEmail(
   req: Request,
@@ -50,44 +47,46 @@ export async function resolveAdminContactEmail(
 ): Promise<string> {
   const normalizedRequestedEmail = normalizeEmail(requestedAdminEmail);
 
-  if (!normalizedRequestedEmail) {
-    const systemAdminEmail = await getSystemAdminEmail(req);
-    if (!systemAdminEmail) {
+  // When an explicit value is provided (e.g. from Admin Contact Email save),
+  // validate that it belongs to an admin user.
+  if (normalizedRequestedEmail) {
+    const adminUser = await findAdminUserByEmail(req, normalizedRequestedEmail);
+    const adminUserEmail = normalizeEmail(adminUser?.email);
+
+    if (!adminUserEmail) {
       throw new GeneralMasterConfigError(
-        "No system admin email is configured. Please create a system admin user first.",
-        500
+      "Selected admin contact email must belong to an admin user.",
+        400
       );
     }
 
-    return systemAdminEmail;
+    return adminUserEmail;
   }
-
-  const adminUser = await findAdminUserByEmail(req, normalizedRequestedEmail);
-  const adminUserEmail = normalizeEmail(adminUser?.email);
-
-  if (!adminUserEmail) {
+  // No explicit email provided – resolve via shared helper (guest_date, then users).
+  const adminEmail = await getAdminEmail(req, db.constants.connectionStrings.tableBooking);
+  if (!adminEmail) {
     throw new GeneralMasterConfigError(
-      "Selected admin contact email must belong to an admin user.",
-      400
+      "No system admin email is configured. Please create a system admin user first.",
+      500
     );
   }
 
-  return adminUserEmail;
+  return adminEmail;
 }
 
 export async function getGeneralMasterConfig(
   req: Request
 ): Promise<GeneralMasterConfig> {
-  const [doc, systemAdminEmail] = await Promise.all([
+  const [doc, fallbackAdminEmail] = await Promise.all([
     findGeneralMasterConfig(req),
-    getSystemAdminEmail(req),
+    getAdminEmail(req, db.constants.connectionStrings.tableBooking),
   ]);
 
   return {
     maxGuestCount: doc?.maxGuestCount ?? 0,
     maxDaysCount: doc?.maxDaysCount ?? 0,
     allowBookingWhenSlotFull: doc?.allowBookingWhenSlotFull ?? false,
-    adminEmail: normalizeEmail(doc?.adminEmail) ?? systemAdminEmail,
+    adminEmail: normalizeEmail(doc?.adminEmail) ?? fallbackAdminEmail,
   };
 }
 
