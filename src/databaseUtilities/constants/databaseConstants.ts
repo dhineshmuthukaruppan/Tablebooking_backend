@@ -15,6 +15,8 @@ export const dbTables = {
   table_allocations: "table_allocations",
   menu_categories: "menu_categories",
   menu_products: "menu_products",
+  video_categories: "video_categories",
+  videos: "videos",
   counters: "counters",
 } as const;
 
