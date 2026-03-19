@@ -1,22 +1,115 @@
 import type { Request, Response } from "express";
-import { ObjectId } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import {
+  sendAdminBookingCancellationEmail,
+  sendAdminBookingConfirmationEmail,
+  sendBookingCancellationEmail,
+  sendBookingConfirmationEmail,
+} from "../../services/email/email.service";
 import * as bookingSequence from "../../services/bookingSequence";
 
 const ADMIN_BOOKING_STATUSES = ["pending", "confirmed", "completed", "noshow", "cancelled"] as const;
 type AdminBookingStatus = (typeof ADMIN_BOOKING_STATUSES)[number];
 
+function formatBookingDate(date: Date): string {
+  return date.toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 export interface AdminListBookingsBody {
   page?: number;
   limit?: number;
   status?: AdminBookingStatus[];
-  bookingDate?: string; // YYYY-MM-DD
+  bookingDateStart?: string; // YYYY-MM-DD
+  bookingDateEnd?: string;   // YYYY-MM-DD
   name?: string;
   email?: string;
   phone?: string;
   guestCount?: number;
   section?: string[];
   feedback?: "given" | "required";
+  /** Filter by slot (24h "HH:mm"). Booking has slot: { startTime, endTime }. */
+  slots?: { startTime: string; endTime: string }[];
+}
+
+/** Build MongoDB query from admin list/export body (shared by list and export). */
+function buildAdminBookingsQuery(body: AdminListBookingsBody): Record<string, unknown> {
+  const query: Record<string, unknown> = {};
+
+  const statusArr = Array.isArray(body.status) ? body.status : [];
+  const validStatuses = statusArr.filter((s) => ADMIN_BOOKING_STATUSES.includes(s as AdminBookingStatus));
+  if (validStatuses.length > 0) {
+    query.status = { $in: validStatuses };
+  }
+
+  const startStr =
+    typeof body.bookingDateStart === "string" && body.bookingDateStart.trim()
+      ? body.bookingDateStart.trim()
+      : undefined;
+  const endStr =
+    typeof body.bookingDateEnd === "string" && body.bookingDateEnd.trim()
+      ? body.bookingDateEnd.trim()
+      : undefined;
+  if (startStr || endStr) {
+    const range: { $gte?: Date; $lte?: Date } = {};
+    if (startStr) {
+      const start = new Date(`${startStr}T00:00:00.000Z`);
+      if (!Number.isNaN(start.getTime())) range.$gte = start;
+    }
+    if (endStr) {
+      const end = new Date(`${endStr}T23:59:59.999Z`);
+      if (!Number.isNaN(end.getTime())) range.$lte = end;
+    }
+    if (Object.keys(range).length > 0) {
+      query.bookingDate = range;
+    }
+  }
+
+  if (typeof body.name === "string" && body.name.trim()) {
+    query.customerName = { $regex: body.name.trim(), $options: "i" };
+  }
+  if (typeof body.email === "string" && body.email.trim()) {
+    query.customerEmail = { $regex: body.email.trim(), $options: "i" };
+  }
+  if (typeof body.phone === "string" && body.phone.trim()) {
+    query.customerPhone = { $regex: body.phone.trim(), $options: "i" };
+  }
+
+  if (typeof body.guestCount === "number" && Number.isFinite(body.guestCount) && body.guestCount > 0) {
+    query.guestCount = body.guestCount;
+  }
+
+  const sectionsArr = Array.isArray(body.section) ? body.section.filter((s) => typeof s === "string" && s.trim()) : [];
+  if (sectionsArr.length > 0) {
+    query.sectionName = { $in: sectionsArr };
+  }
+
+  if (body.feedback === "given") {
+    query.feedback = { $ne: null };
+  } else if (body.feedback === "required") {
+    query.feedbackRequired = true;
+  }
+
+  const slotsArr = Array.isArray(body.slots) ? body.slots : [];
+  const validSlots = slotsArr.filter(
+    (s) =>
+      typeof s?.startTime === "string" &&
+      s.startTime.trim() !== "" &&
+      typeof s?.endTime === "string" &&
+      s.endTime.trim() !== ""
+  );
+  if (validSlots.length > 0) {
+    query.$or = validSlots.map((s) => ({
+      "slot.startTime": s.startTime.trim(),
+      "slot.endTime": s.endTime.trim(),
+    }));
+  }
+
+  return query;
 }
 
 /**
@@ -32,54 +125,7 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
     const skip = (page - 1) * limit;
 
     const connectionString = db.constants.connectionStrings.tableBooking;
-
-    const query: Record<string, unknown> = {};
-
-    // Status filter
-    const statusArr = Array.isArray(body.status) ? body.status : [];
-    const validStatuses = statusArr.filter((s) => ADMIN_BOOKING_STATUSES.includes(s as AdminBookingStatus));
-    if (validStatuses.length > 0) {
-      query.status = { $in: validStatuses };
-    }
-
-    // bookingDate filter – single day range
-    if (typeof body.bookingDate === "string" && body.bookingDate.trim()) {
-      const dateStr = body.bookingDate.trim();
-      const start = new Date(`${dateStr}T00:00:00.000Z`);
-      const end = new Date(`${dateStr}T23:59:59.999Z`);
-      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-        query.bookingDate = { $gte: start, $lte: end };
-      }
-    }
-
-    // Text filters
-    if (typeof body.name === "string" && body.name.trim()) {
-      query.customerName = { $regex: body.name.trim(), $options: "i" };
-    }
-    if (typeof body.email === "string" && body.email.trim()) {
-      query.customerEmail = { $regex: body.email.trim(), $options: "i" };
-    }
-    if (typeof body.phone === "string" && body.phone.trim()) {
-      query.customerPhone = { $regex: body.phone.trim(), $options: "i" };
-    }
-
-    // Guest count (exact match)
-    if (typeof body.guestCount === "number" && Number.isFinite(body.guestCount) && body.guestCount > 0) {
-      query.guestCount = body.guestCount;
-    }
-
-    // Section filter
-    const sectionsArr = Array.isArray(body.section) ? body.section.filter((s) => typeof s === "string" && s.trim()) : [];
-    if (sectionsArr.length > 0) {
-      query.sectionName = { $in: sectionsArr };
-    }
-
-    // Feedback filter
-    if (body.feedback === "given") {
-      query.feedback = { $ne: null };
-    } else if (body.feedback === "required") {
-      query.feedbackRequired = true;
-    }
+    const query = buildAdminBookingsQuery(body);
 
     const projection = {
       _id: 1,
@@ -147,6 +193,130 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
   }
 }
 
+const EXPORT_MAX_ROWS = 50_000;
+
+function escapeCsvCell(value: string | number | null | undefined): string {
+  const s = value == null ? "" : String(value);
+  if (s.includes('"') || s.includes(",") || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function formatDateExport(v: string | Date | null | undefined): string {
+  if (v == null) return "";
+  const d = typeof v === "string" ? new Date(v) : v;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * POST /admin/bookings/export — admin/staff export all filtered bookings as CSV (no pagination).
+ */
+export async function exportAdminBookingsHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const body = (req.body as AdminListBookingsBody) ?? {};
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const query = buildAdminBookingsQuery(body);
+
+    const projection = {
+      _id: 1,
+      bookingNumber: 1,
+      customerName: 1,
+      customerEmail: 1,
+      customerPhone: 1,
+      bookingDate: 1,
+      sectionName: 1,
+      slot: 1,
+      guestCount: 1,
+      status: 1,
+      payment: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const items = await db.read.find({
+      req,
+      connectionString,
+      collection: "bookings",
+      query,
+      projection,
+      sort: { createdAt: -1 },
+      skip: 0,
+      limit: EXPORT_MAX_ROWS,
+    });
+
+    type Row = {
+      _id?: string;
+      bookingNumber?: number;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
+      bookingDate?: string;
+      sectionName?: string;
+      slot?: { startTime?: string; endTime?: string };
+      guestCount?: number;
+      status?: string;
+      payment?: { status?: string; method?: string } | null;
+      createdAt?: string;
+      updatedAt?: string;
+    };
+    const rows: Row[] = (items ?? []) as unknown as Row[];
+
+    const headers = [
+      "Booking ID",
+      "Name",
+      "Email",
+      "Phone",
+      "Booking date",
+      "Guest count",
+      "Slot start",
+      "Slot end",
+      "Section",
+      "Status",
+      "Payment status",
+      "Payment method",
+      "Created at",
+      "Updated at",
+    ];
+    const headerLine = headers.map(escapeCsvCell).join(",");
+
+    const dataLines = rows.map((r) => {
+      const slotStart = r.slot?.startTime ?? "";
+      const slotEnd = r.slot?.endTime ?? "";
+      const bookingId = r.bookingNumber != null ? String(r.bookingNumber) : (r._id ?? "");
+      const paymentStatus = r.payment?.status ?? "";
+      const paymentMethod = r.payment?.method ?? "";
+      return [
+        escapeCsvCell(bookingId),
+        escapeCsvCell(r.customerName),
+        escapeCsvCell(r.customerEmail),
+        escapeCsvCell(r.customerPhone),
+        escapeCsvCell(formatDateExport(r.bookingDate)),
+        escapeCsvCell(r.guestCount),
+        escapeCsvCell(slotStart),
+        escapeCsvCell(slotEnd),
+        escapeCsvCell(r.sectionName),
+        escapeCsvCell(r.status),
+        escapeCsvCell(paymentStatus),
+        escapeCsvCell(paymentMethod),
+        escapeCsvCell(formatDateExport(r.createdAt)),
+        escapeCsvCell(formatDateExport(r.updatedAt)),
+      ].join(",");
+    });
+
+    const bom = "\uFEFF";
+    const csv = bom + headerLine + "\n" + dataLines.join("\n");
+
+    const filename = `bookings_export_${formatDateExport(new Date()).replace(/-/g, "")}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(csv);
+  } catch {
+    res.status(500).json({ message: "Export failed" });
+  }
+}
+
 /**
  * PATCH /admin/bookings/:id — admin/staff update booking: status, billing, payment, feedbackRequired.
  * Used when: 1) marking booking as "completed" on table assign, 2) submitting payment.
@@ -180,6 +350,39 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
     const query = { _id: new ObjectId(id) };
     const now = new Date();
     const updates: Record<string, unknown> = { updatedAt: now };
+    const existingBooking = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "bookings",
+      query,
+    }) as {
+      _id?: ObjectId;
+      userId?: ObjectId | string | null;
+      customerEmail?: string;
+      customerName?: string;
+      bookingDate?: Date;
+      sectionName?: string;
+      slot?: { startTime?: string; endTime?: string };
+      guestCount?: number;
+      status?: string;
+      payment?: { status?: "pending" | "paid" | null };
+      coupon?: {
+        couponId?: ObjectId;
+        couponCode?: string;
+        isReserved?: boolean;
+        reservedAt?: Date | null;
+        isRedeemed?: boolean;
+        redeemedAt?: Date | null;
+        appliedPercentage?: number;
+      } | null;
+    } | null;
+
+    if (!existingBooking) {
+      res.status(404).json({ message: "Booking not found" });
+      return;
+    }
+
+    const previousStatus = existingBooking.status;
 
     if (body.status !== undefined) {
       const valid = ["pending", "confirmed", "completed", "noshow", "cancelled"].includes(body.status);
@@ -238,13 +441,151 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       return;
     }
 
-    await db.update.findOneAndUpdate({
-      req,
-      connectionString,
-      collection: "bookings",
-      query,
-      update: { $set: updates },
-    });
+    // Transaction: update booking and (optionally) redeem coupon + increment coupon totalUsed
+    const dbConn = (req.app.locals as Record<string, unknown>)[connectionString + "DB"] as import("mongodb").Db | undefined;
+    const client = (req.app.locals as Record<string, unknown>)[connectionString + "CLIENT"] as MongoClient | undefined;
+    if (!dbConn || !client) {
+      res.status(500).json({ message: "Database not available" });
+      return;
+    }
+
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const bookingCol = dbConn.collection("bookings");
+        const couponsCol = dbConn.collection(db.constants.dbTables.coupons);
+        const redeemsCol = dbConn.collection("redeems");
+
+        const booking = (await bookingCol.findOne(query, { session })) as typeof existingBooking;
+        if (!booking?._id) {
+          throw new Error("Booking not found");
+        }
+
+        const isPaidUpdate = body.payment?.status === "paid";
+        const coupon = booking.coupon ?? null;
+        const canRedeem =
+          isPaidUpdate &&
+          coupon?.isReserved === true &&
+          coupon?.isRedeemed !== true &&
+          coupon?.couponId instanceof ObjectId;
+
+        const txUpdates: Record<string, unknown> = { ...updates };
+        if (canRedeem) {
+          (txUpdates as Record<string, unknown>)["coupon.isRedeemed"] = true;
+          (txUpdates as Record<string, unknown>)["coupon.redeemedAt"] = now;
+        }
+
+        await bookingCol.updateOne(query, { $set: txUpdates }, { session });
+
+        if (canRedeem) {
+          await couponsCol.updateOne(
+            { _id: coupon!.couponId as ObjectId },
+            { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
+            { session }
+          );
+
+          await redeemsCol.insertOne(
+            {
+              couponId: coupon!.couponId as ObjectId,
+              userId: booking.userId as ObjectId,
+              bookingId: booking._id as ObjectId,
+              redeemedAt: now,
+            },
+            { session }
+          );
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    const nextStatus = typeof body.status === "string" ? body.status : previousStatus;
+    const shouldSendConfirmationEmail =
+      previousStatus === "pending" && nextStatus === "confirmed";
+    const shouldSendCancellationEmail =
+      previousStatus === "pending" && nextStatus === "cancelled";
+
+    if (
+      (shouldSendConfirmationEmail || shouldSendCancellationEmail) &&
+      typeof existingBooking.customerName === "string" &&
+      existingBooking.customerName.trim() &&
+      existingBooking.bookingDate instanceof Date &&
+      typeof existingBooking.sectionName === "string" &&
+      existingBooking.sectionName.trim() &&
+      typeof existingBooking.slot?.startTime === "string" &&
+      existingBooking.slot.startTime.trim() &&
+      typeof existingBooking.slot?.endTime === "string" &&
+      existingBooking.slot.endTime.trim()
+    ) {
+
+      const guestDateConfig = (await db.read.findOne({
+        req,
+        connectionString,
+        collection: "guest_date",
+        query: { type: "default" },
+        projection: { adminEmail: 1 },
+      })) as { adminEmail?: string | null } | null;
+      let ADMIN_EMAIL: string | null =
+        (typeof guestDateConfig?.adminEmail === "string" && guestDateConfig.adminEmail.trim())
+          ? guestDateConfig.adminEmail.trim()
+          : null;
+      if (!ADMIN_EMAIL) {
+        const adminUsers = (await db.read.find({
+          req,
+          connectionString,
+          collection: "users",
+          query: { role: "admin", email: { $exists: true, $nin: [null, ""] } },
+          projection: { email: 1 },
+          sort: { createdAt: 1 },
+          limit: 1,
+        })) as { email?: string }[];
+        const firstAdmin = adminUsers?.[0];
+        ADMIN_EMAIL =
+          typeof firstAdmin?.email === "string" && firstAdmin.email.trim()
+            ? firstAdmin.email.trim()
+            : null;
+      }
+      const emailPayload = {
+        customerEmail: existingBooking.customerEmail?.trim(),
+        adminEmail: ADMIN_EMAIL ?? undefined,
+        customerId:
+          existingBooking.userId instanceof ObjectId
+            ? existingBooking.userId.toString()
+            : existingBooking.userId?.toString(),
+        customerName: existingBooking.customerName.trim(),
+        bookingId: id,
+        bookingDate: formatBookingDate(existingBooking.bookingDate),
+        startTime: existingBooking.slot.startTime.trim(),
+        endTime: existingBooking.slot.endTime.trim(),
+        guests:
+          typeof existingBooking.guestCount === "number"
+            ? existingBooking.guestCount
+            : 0,
+        section: existingBooking.sectionName.trim(),
+        venueName: "The Sheesha Factory",
+        location: "RS Puram, Coimbatore",
+      };
+
+      if (shouldSendConfirmationEmail) {
+        void sendBookingConfirmationEmail(emailPayload).catch((error) => {
+          console.error("[admin-booking] Booking confirmation email failed", error);
+        });
+
+        void sendAdminBookingConfirmationEmail(req, emailPayload).catch((error) => {
+          console.error("[admin-booking] Admin booking confirmation email failed", error);
+        });
+      }
+
+      if (shouldSendCancellationEmail) {
+        void sendBookingCancellationEmail(emailPayload).catch((error) => {
+          console.error("[admin-booking] Booking cancellation email failed", error);
+        });
+
+        void sendAdminBookingCancellationEmail(req, emailPayload).catch((error) => {
+          console.error("[admin-booking] Admin booking cancellation email failed", error);
+        });
+      }
+    }
 
     res.status(200).json({ message: "Booking updated" });
   } catch {

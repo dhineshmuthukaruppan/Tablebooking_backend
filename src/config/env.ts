@@ -19,15 +19,12 @@ const envSchema = z.object({
       "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001"
     ),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
-  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(200),
-  // Optional: for sending verification email when admin adds a user
-  FRONTEND_URL: z.string().url().optional().or(z.literal("")),
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().optional(),
-  SMTP_SECURE: z.coerce.boolean().optional(),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  MAIL_FROM: z.string().email().optional().or(z.literal("")),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(1000),
+  FRONTEND_URL: z.string().optional().default(""),
+  MAIL_FROM: z.string().optional().default(""),
+  TWILIO_ACCOUNT_SID: z.string().default(""),
+  TWILIO_AUTH_TOKEN: z.string().default(""),
+  TWILIO_PHONE_NUMBER: z.string().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);

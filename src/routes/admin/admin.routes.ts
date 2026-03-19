@@ -7,6 +7,7 @@ import { auth } from "../../services";
 import * as adminController from "../../controllers/admin";
 import { masterRoutes } from "./master";
 import { menuAdminRoutes } from "./menu.routes";
+import { adminCouponsRoutes } from "./coupons.routes";
 import { adminVideosRoutes } from "./videos.routes";
 
 const router = Router();
@@ -16,6 +17,13 @@ router.post(
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
   adminController.listAdminBookingsHandler
+);
+
+router.post(
+  "/bookings/export",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.exportAdminBookingsHandler
 );
 
 router.patch(
@@ -80,6 +88,7 @@ router.patch(
 
 router.use("/master", masterRoutes);
 router.use("/menu", menuAdminRoutes);
+router.use("/coupons", adminCouponsRoutes);
 router.use("/", adminVideosRoutes);
 
 router.get(

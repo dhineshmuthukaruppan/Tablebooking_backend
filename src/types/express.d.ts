@@ -7,9 +7,12 @@ declare global {
         id?: import("mongodb").ObjectId;
         uid: string;
         email?: string;
+        phoneNumber?: string | null;
         displayName?: string;
         role: Role;
         isEmailVerified?: boolean;
+        isPhoneVerified?: boolean;
+        authProvider?: "email" | "phone";
         isEligibleForCoupons?: boolean;
         createdAt?: Date;
       };

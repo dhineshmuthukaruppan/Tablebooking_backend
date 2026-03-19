@@ -4,6 +4,7 @@ export interface DecodedIdToken {
   uid: string;
   email?: string;
   email_verified?: boolean;
+  phone_number?: string;
 }
 
 export async function verifyIdToken(idToken: string | undefined): Promise<DecodedIdToken | null> {

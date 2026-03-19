@@ -10,7 +10,7 @@ export async function authenticate(
 ): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    const token = authHeader?.startsWith("Bearer") ? authHeader.slice(7) : null;
 
     if (!token) {
       res.status(401).json({ message: "Missing Bearer token" });
@@ -19,6 +19,7 @@ export async function authenticate(
 
     const decoded = await firebaseAdminAuth.verifyIdToken(token);
     const email = (decoded.email ?? "").toLowerCase().trim();
+    const phoneNumber = decoded.phone_number ?? null;
     const connectionString = db.constants.connectionStrings.tableBooking;
 
     let user = await db.read.findOne({
@@ -28,14 +29,21 @@ export async function authenticate(
       query: { firebaseUid: decoded.uid },
     }) as UserDocument | null;
     const isEmailVerified = Boolean(decoded.email_verified);
+    const isPhoneVerified = Boolean(phoneNumber);
+
+    const authProvider: UserDocument["authProvider"] =
+      phoneNumber && !email ? "phone" : "email";
 
     if (!user && email) {
       const now = new Date();
       const newUser: UserDocument = {
         firebaseUid: decoded.uid,
         email,
+        phoneNumber,
         role: "user",
         isEmailVerified,
+        isPhoneVerified,
+        authProvider,
         isEligibleForCoupons: false,
         createdAt: now,
         updatedAt: now,
@@ -52,15 +60,43 @@ export async function authenticate(
         collection: "users",
         query: { firebaseUid: decoded.uid },
       }) as UserDocument | null;
-    } else if (user && user.isEmailVerified !== isEmailVerified) {
-      await db.update.updateOne({
-        req,
-        connectionString,
-        collection: "users",
-        query: { firebaseUid: decoded.uid },
-        update: { $set: { isEmailVerified, updatedAt: new Date() } },
-      });
-      user = { ...user, isEmailVerified, updatedAt: new Date() };
+    } else if (user) {
+      const updateFields: Partial<UserDocument> & { updatedAt: Date } = {
+        updatedAt: new Date(),
+      };
+
+      let shouldUpdate = false;
+
+      if (user.isEmailVerified !== isEmailVerified) {
+        updateFields.isEmailVerified = isEmailVerified;
+        shouldUpdate = true;
+      }
+
+      if (phoneNumber && user.phoneNumber !== phoneNumber) {
+        updateFields.phoneNumber = phoneNumber;
+        shouldUpdate = true;
+      }
+
+      if (user.isPhoneVerified !== isPhoneVerified) {
+        updateFields.isPhoneVerified = isPhoneVerified;
+        shouldUpdate = true;
+      }
+
+      if (!user.authProvider) {
+        updateFields.authProvider = authProvider;
+        shouldUpdate = true;
+      }
+
+      if (shouldUpdate) {
+        await db.update.updateOne({
+          req,
+          connectionString,
+          collection: "users",
+          query: { firebaseUid: decoded.uid },
+          update: { $set: updateFields as Record<string, unknown> },
+        });
+        user = { ...user, ...updateFields };
+      }
     }
 
     if (!user) {
@@ -72,9 +108,12 @@ export async function authenticate(
       id: user._id,
       uid: decoded.uid,
       email: decoded.email,
+      phoneNumber: user.phoneNumber ?? phoneNumber,
       displayName: user.displayName,
       role: user.role,
       isEmailVerified: user.isEmailVerified,
+      isPhoneVerified: user.isPhoneVerified,
+      authProvider: user.authProvider ?? authProvider,
       isEligibleForCoupons: user.isEligibleForCoupons ?? false,
       createdAt: user.createdAt,
     };

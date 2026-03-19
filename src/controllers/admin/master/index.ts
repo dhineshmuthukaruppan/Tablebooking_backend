@@ -1,6 +1,7 @@
 export {
   getGuestDatesConfigHandler,
   updateGuestDatesConfigHandler,
+  updateGuestDatesAdminEmailHandler,
 } from "./guest-dates.handler";
 export {
   getMealTimeListHandler,

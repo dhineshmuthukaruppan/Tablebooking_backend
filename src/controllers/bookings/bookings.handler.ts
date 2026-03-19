@@ -1,11 +1,45 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
+import { logger } from "../../config/logger";
 import db from "../../databaseUtilities";
 import * as slotInventory from "../../services/slotInventory";
 import * as slotConfigService from "../../services/slotConfig";
+import {
+  sendAdminBookingCancellationEmail,
+  sendBookingCancellationEmail,
+  sendBookingConfirmationEmail,
+} from "../../services/email/email.service";
+import { sendSMS } from "../../services/sms.service";
+import {
+  bookingCancelledSMS,
+  bookingConfirmedSMS,
+} from "../../services/smsTemplates";
 import * as bookingSequence from "../../services/bookingSequence";
 
 const GUEST_DATE_QUERY = { type: "default" } as const;
+
+function formatBookingDate(date: Date): string {
+  return date.toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function buildBookingSmsData(params: {
+  bookingId?: string;
+  bookingDate: Date;
+  startTime: string;
+  endTime: string;
+  guestCount: number;
+}): { bookingId?: string; date: string; time: string; guests: number } {
+  return {
+    bookingId: params.bookingId,
+    date: formatBookingDate(params.bookingDate),
+    time: `${params.startTime} - ${params.endTime}`,
+    guests: params.guestCount,
+  };
+}
 
 /** Start of today 00:00:00 UTC, end of today 23:59:59.999 UTC */
 function getTodayRange(): { start: Date; end: Date } {
@@ -123,7 +157,24 @@ export async function listBookingsHandler(req: Request, res: Response): Promise<
   }
 }
 
-/** POST /bookings — create a booking (body: customerName, customerEmail, customerPhone?, bookingDate, sectionId, sectionName, slot, guestCount). */
+function getWeekdayName(date: Date): string {
+  return ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][
+    date.getDay()
+  ];
+}
+
+function isTimeWithinRange(time: string, start: string, end: string): boolean {
+  const toMinutes = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const t = toMinutes(time);
+  const s = toMinutes(start);
+  const e = toMinutes(end);
+  return t >= s && t < e;
+}
+
+/** POST /bookings — create a booking (body: customerName, customerEmail, customerPhone?, bookingDate, sectionId, sectionName, slot, guestCount, couponCode?). */
 export async function createBookingHandler(req: Request, res: Response): Promise<void> {
   try {
     const user = req.user;
@@ -131,6 +182,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       res.status(401).json({ message: "Unauthorized" });
       return;
     }
+    const userIdObjectId = new ObjectId(user.id.toString());
     const body = req.body as {
       customerName?: string;
       customerEmail?: string;
@@ -140,6 +192,9 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       sectionName?: string;
       slot?: { startTime?: string; endTime?: string };
       guestCount?: number;
+      couponId?: string;
+      couponCode?: string;
+      appliedPercentage?: number;
     };
     const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
     const customerEmail = typeof body.customerEmail === "string" ? body.customerEmail.trim() : (user.email ?? "").toLowerCase();
@@ -151,6 +206,12 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     const startTime = typeof slot.startTime === "string" ? slot.startTime.trim() : "";
     const endTime = typeof slot.endTime === "string" ? slot.endTime.trim() : "";
     const guestCount = typeof body.guestCount === "number" ? Math.max(1, Math.floor(body.guestCount)) : 1;
+    const couponIdStr = typeof body.couponId === "string" ? body.couponId.trim() : "";
+    const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : "";
+    const appliedPercentageFromClient =
+      typeof body.appliedPercentage === "number" && Number.isFinite(body.appliedPercentage)
+        ? Math.floor(body.appliedPercentage)
+        : null;
 
     if (!customerName || !bookingDateStr || !sectionIdStr || !sectionName || !startTime || !endTime) {
       res.status(400).json({
@@ -172,6 +233,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
     }
 
     const connectionString = db.constants.connectionStrings.tableBooking;
+    const now = new Date();
 
     const config = await slotConfigService.getSlotConfigForDate(req, sectionId, bookingDate);
     if (!config) {
@@ -194,6 +256,212 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       slotEndTime: endTime,
       totalSeats,
     });
+
+    // Optional coupon validation (percentage + conditions).
+    let appliedCoupon:
+      | {
+          couponId: ObjectId;
+          couponCode: string;
+          isReserved: true;
+          isRedeemed: false;
+          reservedAt: Date;
+          redeemedAt: null;
+          appliedPercentage: number;
+        }
+      | null = null;
+    let shouldInsertRedeemReservation = false;
+    if (couponCode) {
+      let couponObjectId: ObjectId | null = null;
+      if (couponIdStr && ObjectId.isValid(couponIdStr)) {
+        couponObjectId = new ObjectId(couponIdStr);
+      }
+
+      type CouponForBookingValidation = {
+        _id?: ObjectId;
+        oneTimePerUser?: boolean | null;
+        expiryDate?: Date | null;
+        maxUsageLimit?: number | null;
+        totalUsed?: number | null;
+        totalReserved?: number | null;
+        offerConfig?: {
+          defaultOffer?: number;
+          customDates?: { date: Date; percentage: number }[];
+          specialDateRanges?: {
+            isEnabled?: boolean;
+            startDateTime?: Date;
+            endDateTime?: Date;
+            percentage: number;
+          }[];
+          weekday?: { isEnabled?: boolean; days?: Record<string, number | undefined> };
+        };
+        conditions?: {
+          minGuestCount?: number;
+          minBookingAmount?: number;
+          allowedSections?: string[];
+          allowedWeekdays?: string[];
+          firstTimeUsersOnly?: boolean;
+          validBookingTimeRange?: { startTime: string; endTime: string };
+        };
+      } & Record<string, unknown>;
+
+      const coupon = (await db.read.findOne({
+        req,
+        connectionString,
+        collection: db.constants.dbTables.coupons,
+        query: couponObjectId
+          ? { _id: couponObjectId, code: couponCode, isActive: true, deletedAt: null }
+          : { code: couponCode, isActive: true, deletedAt: null },
+      })) as CouponForBookingValidation | null;
+
+      const invalidResponse = () => {
+        res.status(400).json({ message: "Coupon expired or invalid for this booking" });
+        return true;
+      };
+
+
+      if (!coupon) {
+        if (invalidResponse()) return;
+      } else {
+        const couponId = coupon._id instanceof ObjectId ? coupon._id : null;
+        if (!couponId) {
+          invalidResponse();
+          return;
+        }
+
+        if (coupon.oneTimePerUser === true) {
+          const existingRedeem = await db.read.findOne({
+            req,
+            connectionString,
+            collection: db.constants.dbTables.redeems,
+            query: { couponId, userId: userIdObjectId },
+            projection: { _id: 1 },
+          });
+          if (existingRedeem) {
+            res.status(400).json({
+              message: "Already redeemed. Please try any other coupons.",
+            });
+            return;
+          }
+          shouldInsertRedeemReservation = true;
+        }
+
+        if (coupon.expiryDate instanceof Date && !Number.isNaN(coupon.expiryDate.getTime())) {
+          if (coupon.expiryDate.getTime() < bookingDate.getTime()) {
+            if (invalidResponse()) return;
+          }
+        }
+
+        if (
+          typeof coupon.maxUsageLimit === "number" &&
+          typeof coupon.totalUsed === "number" &&
+          coupon.maxUsageLimit > 0 &&
+          coupon.totalUsed >= coupon.maxUsageLimit
+        ) {
+          if (invalidResponse()) return;
+        }
+
+        const offer = coupon.offerConfig ?? {};
+        let percentage = 0;
+
+        // 1) Custom date offers – match by date only.
+        if (Array.isArray(offer.customDates) && offer.customDates.length > 0) {
+          const bookingKey = bookingDate.toISOString().slice(0, 10);
+          for (const cd of offer.customDates) {
+            if (!(cd.date instanceof Date)) continue;
+            const cdKey = cd.date.toISOString().slice(0, 10);
+            if (cdKey === bookingKey && typeof cd.percentage === "number") {
+              percentage = cd.percentage;
+              break;
+            }
+          }
+        }
+
+        // 2) Special date ranges – slot start must fall within enabled range.
+        if (!percentage && Array.isArray(offer.specialDateRanges) && offer.specialDateRanges.length > 0) {
+          const slotStart = new Date(bookingDate);
+          const [sh, sm] = startTime.split(":").map(Number);
+          slotStart.setHours(sh || 0, sm || 0, 0, 0);
+          for (const sr of offer.specialDateRanges) {
+            if (sr.isEnabled === false) continue;
+            const startDt = sr.startDateTime instanceof Date ? sr.startDateTime : null;
+            const endDt = sr.endDateTime instanceof Date ? sr.endDateTime : null;
+            if (!startDt || !endDt) continue;
+            if (slotStart.getTime() >= startDt.getTime() && slotStart.getTime() <= endDt.getTime()) {
+              if (typeof sr.percentage === "number") {
+                percentage = sr.percentage;
+                break;
+              }
+            }
+          }
+        }
+
+        // 3) Weekday offers.
+        if (!percentage && offer.weekday?.isEnabled) {
+          const weekday = getWeekdayName(bookingDate);
+          const days = offer.weekday.days ?? {};
+          const pct = days[weekday] ?? (days as Record<string, number | undefined>)[weekday.toLowerCase()];
+          if (typeof pct === "number" && pct > 0) {
+            percentage = pct;
+          }
+        }
+
+        // 4) Default.
+        if (!percentage && typeof offer.defaultOffer === "number" && offer.defaultOffer > 0) {
+          percentage = offer.defaultOffer;
+        }
+
+        // Conditions.
+        const conditions = coupon.conditions ?? {};
+        const bookingWeekday = getWeekdayName(bookingDate);
+        if (conditions.minGuestCount && guestCount < conditions.minGuestCount) {
+          if (invalidResponse()) return;
+        }
+        if (
+          Array.isArray(conditions.allowedWeekdays) &&
+          conditions.allowedWeekdays.length > 0 &&
+          !conditions.allowedWeekdays
+            .map((w) => w.toLowerCase())
+            .includes(bookingWeekday.toLowerCase())
+        ) {
+          if (invalidResponse()) return;
+        }
+        if (
+          Array.isArray(conditions.allowedSections) &&
+          conditions.allowedSections.length > 0 &&
+          !conditions.allowedSections.some(
+            (s) => s.trim().toLowerCase() === sectionName.toLowerCase(),
+          )
+        ) {
+          if (invalidResponse()) return;
+        }
+        if (
+          conditions.validBookingTimeRange &&
+          !isTimeWithinRange(startTime, conditions.validBookingTimeRange.startTime, conditions.validBookingTimeRange.endTime)
+        ) {
+          if (invalidResponse()) return;
+        }
+
+        if (!percentage || percentage <= 0) {
+          if (invalidResponse()) return;
+        }
+
+        // Client/server mismatch guard (prevents stale UI / tampering).
+        if (appliedPercentageFromClient !== null && appliedPercentageFromClient !== Math.floor(percentage)) {
+          res.status(400).json({ message: "Coupon mismatch. Please select the coupon again." });
+          return;
+        }
+
+        appliedCoupon = {
+          couponId,
+          couponCode,
+          isReserved: true,
+          isRedeemed: false,
+          reservedAt: now,
+          redeemedAt: null,
+          appliedPercentage: percentage,
+        };
+      }
+    }
 
     const allocated = await slotInventory.allocateSeats({
       req,
@@ -224,7 +492,6 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       }
     }
 
-    const now = new Date();
     const bookingNumber = await bookingSequence.getNextBookingNumber(req);
     const doc = {
       bookingNumber,
@@ -238,7 +505,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       slot: { startTime, endTime },
       guestCount,
       status,
-      coupon: null,
+      coupon: appliedCoupon,
       billing: null,
       payment: {
         status: null,
@@ -252,15 +519,100 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       createdAt: now,
       updatedAt: now,
     };
-    await db.create.insertOne({
+    const insertResult = await db.create.insertOne({
       req,
       connectionString,
       collection: "bookings",
       payload: doc as unknown as Record<string, unknown>,
     });
+    const bookingId = insertResult?.insertedId;
+
+    if (shouldInsertRedeemReservation && appliedCoupon?.couponId && bookingId) {
+      void db.create.insertOne({
+        req,
+        connectionString,
+        collection: db.constants.dbTables.redeems,
+        payload: {
+          couponId: appliedCoupon.couponId,
+          userId: userIdObjectId,
+          bookingId,
+          reservedAt: now,
+          redeemedAt: null,
+        },
+      });
+    }
+
+    const responseDoc = bookingId ? { ...doc, _id: bookingId } : doc;
+
+    // Mark coupon as reserved (+1) after booking is created.
+    if (appliedCoupon?.couponId) {
+      void db.update
+        .updateOne({
+          req,
+          connectionString,
+          collection: db.constants.dbTables.coupons,
+          query: { _id: appliedCoupon.couponId },
+          update: { $inc: { totalReserved: 1 }, $set: { updatedAt: now } },
+        })
+        .catch(() => {
+          // non-blocking; booking remains valid even if analytics counters fail
+        });
+    }
+
+    logger.info("Booking created by user", {
+      bookingId: bookingId ? bookingId.toString() : null,
+      status,
+      emailTriggered: Boolean(customerEmail && status === "confirmed"),
+      smsTriggered: Boolean(customerPhone && req.user?.role === "user" && status === "confirmed"),
+    });
+
+    if (customerEmail && status === "confirmed") {
+      const bookingDateDisplay = formatBookingDate(bookingDate);
+
+      const emailPayload = {
+        customerEmail,
+        customerId: user.id.toString(),
+        customerName,
+        bookingId: bookingId ? bookingId.toString() : "",
+        bookingDate: bookingDateDisplay,
+        startTime,
+        endTime,
+        guests: guestCount,
+        section: sectionName,
+        venueName: "The Sheesha Factory",
+        location: "RS Puram, Coimbatore",
+      };
+
+      // Fire-and-forget; do not block booking response on email dispatch.
+      void sendBookingConfirmationEmail(emailPayload).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[booking] Booking confirmation email failed", err);
+      });
+    }
+
+    if (req.user?.role === "user" && customerPhone) {
+      const smsPayload = buildBookingSmsData({
+        bookingId: bookingId ? bookingId.toString() : undefined,
+        bookingDate,
+        startTime,
+        endTime,
+        guestCount,
+      });
+
+      if (status === "confirmed") {
+        logger.info("SMS Trigger → Booking Confirmed", {
+          bookingId: bookingId ? bookingId.toString() : null,
+        });
+        void sendSMS({
+          to: customerPhone,
+          body: bookingConfirmedSMS(smsPayload),
+        });
+      }
+    }
+
     res.status(201).json({
       message: "Booking created",
-      data: doc,
+      data: responseDoc,
     });
   } catch {
     res.status(500).json({ message: "Internal server error" });
@@ -300,6 +652,10 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
     const b = booking as {
       bookingDate?: Date;
       sectionId?: ObjectId;
+      customerEmail?: string;
+      customerName?: string;
+      sectionName?: string;
+      customerPhone?: string;
       slot?: { startTime?: string; endTime?: string };
       guestCount?: number;
     };
@@ -320,6 +676,74 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
       query: { _id: new ObjectId(id), userId: new ObjectId(userId.toString()) },
       update: { $set: { status: "cancelled", updatedAt: now } },
     });
+
+    console.log("EMAIL DEBUG → status change", {
+      bookingId: id,
+      previousStatus: currentStatus,
+      newStatus: "cancelled",
+      customerEmail: b.customerEmail,
+    });
+
+    if (
+      currentStatus === "pending" &&
+      typeof b.customerEmail === "string" &&
+      b.customerEmail.trim() &&
+      typeof b.customerName === "string" &&
+      b.bookingDate &&
+      b.slot?.startTime &&
+      b.slot?.endTime &&
+      typeof b.sectionName === "string"
+    ) {
+      const emailPayload = {
+        customerEmail: b.customerEmail.trim(),
+        customerId: userId.toString(),
+        customerName: b.customerName,
+        bookingId: id,
+        bookingDate: formatBookingDate(b.bookingDate),
+        startTime: b.slot.startTime,
+        endTime: b.slot.endTime,
+        guests: typeof b.guestCount === "number" ? b.guestCount : 0,
+        section: b.sectionName,
+        venueName: "The Sheesha Factory",
+        location: "RS Puram, Coimbatore",
+      };
+
+      console.log("EMAIL DEBUG → cancellation payload", emailPayload);
+
+      void sendBookingCancellationEmail(emailPayload).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[booking] Booking cancellation email failed", err);
+      });
+
+      void sendAdminBookingCancellationEmail(req, emailPayload).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[booking] Admin booking cancellation email failed", err);
+      });
+    }
+
+    if (
+      req.user?.role === "user" &&
+      currentStatus === "pending" &&
+      typeof b.customerPhone === "string" &&
+      b.customerPhone.trim() &&
+      b.bookingDate &&
+      b.slot?.startTime &&
+      b.slot?.endTime
+    ) {
+      logger.info("SMS Trigger → Booking Cancelled", { bookingId: id });
+      void sendSMS({
+        to: b.customerPhone.trim(),
+        body: bookingCancelledSMS(
+          buildBookingSmsData({
+            bookingDate: b.bookingDate,
+            startTime: b.slot.startTime,
+            endTime: b.slot.endTime,
+            guestCount: typeof b.guestCount === "number" ? b.guestCount : 0,
+          })
+        ),
+      });
+    }
+
     res.status(200).json({ message: "Booking cancelled", data: { _id: id, status: "cancelled" } });
   } catch {
     res.status(500).json({ message: "Internal server error" });
