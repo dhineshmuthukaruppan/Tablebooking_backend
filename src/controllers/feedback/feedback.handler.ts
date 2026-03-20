@@ -31,12 +31,22 @@ export async function getFeedbackByBookingIdHandler(req: Request, res: Response)
   }
 }
 
-/** POST /feedback/images — upload a single feedback image to GCS and return its public URL + object name. */
+/** POST /feedback/images — upload a single feedback media (image/video) to GCS and return its URL + object name. */
 export async function uploadFeedbackImageHandler(req: Request, res: Response): Promise<void> {
   try {
     const file = (req as unknown as { file?: Express.Multer.File }).file;
     if (!file) {
-      res.status(400).json({ message: "Image file is required" });
+      res.status(400).json({ message: "Media file is required" });
+      return;
+    }
+    const isImage = typeof file.mimetype === "string" && file.mimetype.startsWith("image/");
+    const isVideo = typeof file.mimetype === "string" && file.mimetype.startsWith("video/");
+    if (!isImage && !isVideo) {
+      res.status(400).json({ message: "Only image/video uploads are allowed" });
+      return;
+    }
+    if (isVideo && file.size > 20 * 1024 * 1024) {
+      res.status(400).json({ message: "Video size must be 20MB or smaller" });
       return;
     }
     const uploadResult = await uploadPhoto({
@@ -48,7 +58,7 @@ export async function uploadFeedbackImageHandler(req: Request, res: Response): P
       appFolder: "table-booking-feedback",
     });
     res.status(201).json({
-      message: "Feedback image uploaded",
+      message: "Feedback media uploaded",
       data: {
         url: `${FEEDBACK_SERVE_PATH}?object=${encodeURIComponent(uploadResult.objectName)}`,
         objectName: uploadResult.objectName,
@@ -90,6 +100,7 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
       atmosphereRating?: number;
       description?: string;
       images?: string[];
+      videos?: string[];
       canRedeem?: boolean;
       skipped?: boolean;
     };
@@ -104,6 +115,7 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
     const atmosphereRating = typeof body.atmosphereRating === "number" ? Math.min(5, Math.max(0, body.atmosphereRating)) : undefined;
     const description = typeof body.description === "string" ? body.description.trim() : undefined;
     const images = Array.isArray(body.images) ? body.images.filter((u): u is string => typeof u === "string") : undefined;
+    const videos = Array.isArray(body.videos) ? body.videos.filter((u): u is string => typeof u === "string") : undefined;
 
     const connectionString = db.constants.connectionStrings.tableBooking;
     const booking = await db.read.findOne({
@@ -144,6 +156,7 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
       atmosphereRating,
       description: description ?? undefined,
       images: images?.length ? images : undefined,
+      videos: videos?.length ? videos : undefined,
       isPublicVisible: false,
       skipped: skipped ? true : undefined,
       profile: {
@@ -151,6 +164,7 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
         email: userEmail,
       },
       imageApprovals: images?.length ? images.map(() => false) : undefined,
+      videoApprovals: videos?.length ? videos.map(() => false) : undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -244,7 +258,7 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
   }
 }
 
-/** GET /feedback/public — fetch feedbacks where isPublicVisible is true. Returns profile, ratings, description, and only approved images. */
+/** GET /feedback/public — fetch feedbacks where isPublicVisible is true. Returns profile, ratings, description, and only approved media. */
 export async function getPublicFeedbackHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
@@ -277,10 +291,18 @@ export async function getPublicFeedbackHandler(req: Request, res: Response): Pro
     const list = rawList.map((doc: Record<string, unknown>) => {
       const images = doc.images as string[] | undefined;
       const imageApprovals = doc.imageApprovals as boolean[] | undefined;
+      const videos = doc.videos as string[] | undefined;
+      const videoApprovals = doc.videoApprovals as boolean[] | undefined;
       let publicImages: string[] = [];
+      let publicVideos: string[] = [];
       if (Array.isArray(images) && images.length > 0) {
         if (Array.isArray(imageApprovals) && imageApprovals.length === images.length) {
           publicImages = images.filter((_, i) => imageApprovals[i] === true);
+        }
+      }
+      if (Array.isArray(videos) && videos.length > 0) {
+        if (Array.isArray(videoApprovals) && videoApprovals.length === videos.length) {
+          publicVideos = videos.filter((_, i) => videoApprovals[i] === true);
         }
       }
       return {
@@ -292,6 +314,7 @@ export async function getPublicFeedbackHandler(req: Request, res: Response): Pro
         atmosphereRating: doc.atmosphereRating,
         description: doc.description,
         images: publicImages,
+        videos: publicVideos,
         createdAt: doc.createdAt,
       };
     });
