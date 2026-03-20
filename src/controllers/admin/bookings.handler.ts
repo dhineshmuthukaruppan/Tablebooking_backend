@@ -141,6 +141,7 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
       slot: 1,
       guestCount: 1,
       status: 1,
+      coupon: 1,
       payment: 1,
       feedback: 1,
       feedbackRequired: 1,
@@ -394,8 +395,11 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
         res.status(400).json({ message: "Invalid status" });
         return;
       }
+      console.log("body.status", body.status);
       updates.status = body.status;
       updates.feedbackRequired = body.status === "completed";
+      console.log("body.status === completed", body.status === "completed");
+      console.log("updates.feedbackRequired", updates.feedbackRequired);
       (updates as Record<string, unknown>)["payment.status"] =
         body.status === "completed" ? "pending" : null;
     }
@@ -447,25 +451,25 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       return;
     }
 
-    // // Transaction: update booking and (optionally) redeem coupon + increment coupon totalUsed
-    // const dbConn = (req.app.locals as Record<string, unknown>)[connectionString + "DB"] as import("mongodb").Db | undefined;
-    // const client = (req.app.locals as Record<string, unknown>)[connectionString + "CLIENT"] as MongoClient | undefined;
-    // if (!dbConn || !client) {
-    //   res.status(500).json({ message: "Database not available" });
-    //   return;
-    // }
+    // Transaction: update booking and (optionally) redeem coupon + increment coupon totalUsed
+    const dbConn = (req.app.locals as Record<string, unknown>)[connectionString + "DB"] as import("mongodb").Db | undefined;
+    const client = (req.app.locals as Record<string, unknown>)[connectionString + "CLIENT"] as MongoClient | undefined;
+    if (!dbConn || !client) {
+      res.status(500).json({ message: "Database not available" });
+      return;
+    }
 
-    // const session = client.startSession();
-    // try {
-    //   await session.withTransaction(async () => {
-    //     const bookingCol = dbConn.collection("bookings");
-    //     const couponsCol = dbConn.collection(db.constants.dbTables.coupons);
-    //     const redeemsCol = dbConn.collection("redeems");
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const bookingCol = dbConn.collection("bookings");
+        const couponsCol = dbConn.collection(db.constants.dbTables.coupons);
+        const redeemsCol = dbConn.collection("redeems");
 
-    //     const booking = (await bookingCol.findOne(query, { session })) as typeof existingBooking;
-    //     if (!booking?._id) {
-    //       throw new Error("Booking not found");
-    //     }
+        const booking = (await bookingCol.findOne(query, { session })) as typeof existingBooking;
+        if (!booking?._id) {
+          throw new Error("Booking not found");
+        }
 
     //     const isPaidUpdate = body.payment?.status === "paid";
     //     const coupon = booking.coupon ?? null;
@@ -476,13 +480,13 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
     //       coupon?.couponId instanceof ObjectId &&
     //       booking.feedback != null;
 
-    //     const txUpdates: Record<string, unknown> = { ...updates };
+        const txUpdates: Record<string, unknown> = { ...updates };
     //     if (canRedeem) {
     //       (txUpdates as Record<string, unknown>)["coupon.isRedeemed"] = true;
     //       (txUpdates as Record<string, unknown>)["coupon.redeemedAt"] = now;
     //     }
 
-    //     await bookingCol.updateOne(query, { $set: txUpdates }, { session });
+        await bookingCol.updateOne(query, { $set: txUpdates }, { session });
 
     //     if (canRedeem) {
     //       await couponsCol.updateOne(
@@ -501,10 +505,10 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
     //         { session }
     //       );
     //     }
-    //   });
-    // } finally {
-    //   await session.endSession();
-    // }
+      });
+    } finally {
+      await session.endSession();
+    }
 
     const nextStatus = typeof body.status === "string" ? body.status : previousStatus;
     const shouldSendConfirmationEmail =

@@ -189,37 +189,48 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
       const session = client.startSession();
       try {
         await session.withTransaction(async () => {
-          const bookingCol = dbConn.collection("bookings");
-          const allocationsCol = dbConn.collection("table_allocations");
-          const couponsCol = dbConn.collection(db.constants.dbTables.coupons);
-          const redeemsCol = dbConn.collection("redeems");
+          await db.update.updateMany({
+            req,
+            connectionString,
+            collection: db.constants.dbTables.table_allocations,
+            query: { bookingId: bookingIdStr },
+            update: { $set: { isFeedbackGiven: true, updatedAt: now } },
+            options: { session },
+          });
           if (canRedeem) {
             // Run the 4 redemption operations concurrently within the same session/transaction.
             await Promise.all([
-              allocationsCol.updateMany(
-                { bookingId: bookingIdStr },
-                { $set: { isFeedbackGiven: true, updatedAt: now } },
-                { session },
-              ),
-              bookingCol.updateOne(
-                { _id: new ObjectId(bookingIdStr) },
-                { $set: { "coupon.isRedeemed": true, "coupon.redeemedAt": now, updatedAt: now } },
-                { session }
-              ),
-              couponsCol.updateOne(
-                { _id: coupon!.couponId as ObjectId },
-                { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
-                { session }
-              ),
-              redeemsCol.insertOne(
-                {
+             
+              db.update.updateOne({
+                req,
+                connectionString,
+                collection: db.constants.dbTables.bookings,
+                query: { _id: new ObjectId(bookingIdStr) },
+                update: { $set: { "coupon.isRedeemed": true, "coupon.redeemedAt": now, updatedAt: now } },
+                options: { session },
+              }),
+              db.update.updateOne({
+                req,
+                connectionString,
+                collection: db.constants.dbTables.coupons,
+                query: { _id: coupon!.couponId as ObjectId },
+                update: { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
+                options: { session },
+              }),
+              db.create.insertOne({
+                req,
+                connectionString,
+                collection:  db.constants.dbTables.redeems,
+                payload: {
                   couponId: coupon!.couponId as ObjectId,
                   userId: bookingUserId as ObjectId,
                   bookingId: new ObjectId(bookingIdStr),
                   redeemedAt: now,
+                  isFeedbackGiven: true,
+                  appliedPercentage: coupon?.appliedPercentage ?? undefined,
                 },
-                { session }
-              ),
+                options: { session },
+              }),
             ]);
           }
         });

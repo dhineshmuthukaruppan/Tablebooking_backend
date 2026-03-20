@@ -43,26 +43,21 @@ function buildBookingSmsData(params: {
   };
 }
 
-/** Start of today 00:00:00 UTC, end of today 23:59:59.999 UTC */
+/** Start of today 00:00:00 local time, end of today 23:59:59.999 local time */
 function getTodayRange(): { start: Date; end: Date } {
-  const iso = new Date().toISOString().slice(0, 10);
-  const start = new Date(iso + "T00:00:00.000Z");
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
-  end.setUTCMilliseconds(-1);
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   return { start, end };
 }
 
-/** Start of (today - daysOffset) 00:00:00 UTC, end of today 23:59:59.999 UTC */
+/** Start of (today - daysOffset) 00:00:00 local time, end of today 23:59:59.999 local time */
 function getWindowEndOfToday(daysOffset: number): { start: Date; end: Date } {
   const now = new Date();
-  const iso = now.toISOString().slice(0, 10);
-  const startOfToday = new Date(iso + "T00:00:00.000Z");
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const start = new Date(startOfToday);
-  start.setUTCDate(start.getUTCDate() - daysOffset);
-  const end = new Date(startOfToday);
-  end.setUTCDate(end.getUTCDate() + 1);
-  end.setUTCMilliseconds(-1);
+  start.setDate(start.getDate() - daysOffset);
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   return { start, end };
 }
 
@@ -521,7 +516,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
         paidAt: null,
       },
       feedbackRequired: false,
-      feedback: { skipped:false },
+      feedback: null,
       createdAt: now,
       updatedAt: now,
     };
