@@ -12,6 +12,7 @@ import { bookingsRoutes } from "./bookings/bookings.routes";
 import { couponsRoutes } from "./coupons/coupons.routes";
 import { feedbackRoutes } from "./feedback/feedback.routes";
 import { videosRoutes } from "./videos/videos.routes";
+import { videoCategoriesRoutes } from "./video-categories/video-categories.routes";
 import { photosRoutes } from "./photos/photos.routes";
 import { menuRoutes } from "./menu/menu.routes";
 import { usermanagementRoutes } from "./usermanagement/usermanagement.routes";
@@ -46,6 +47,7 @@ v1Router.use("/bookings", bookingsRoutes);
 v1Router.use("/coupons", couponsRoutes);
 v1Router.use("/feedback", feedbackRoutes);
 v1Router.use("/videos", videosRoutes);
+v1Router.use("/video-categories", videoCategoriesRoutes);
 v1Router.use("/photos", photosRoutes);
 v1Router.use("/menu", menuRoutes);
 

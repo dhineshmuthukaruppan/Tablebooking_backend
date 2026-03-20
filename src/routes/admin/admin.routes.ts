@@ -8,6 +8,7 @@ import * as adminController from "../../controllers/admin";
 import { masterRoutes } from "./master";
 import { menuAdminRoutes } from "./menu.routes";
 import { adminCouponsRoutes } from "./coupons.routes";
+import { adminVideosRoutes } from "./videos.routes";
 
 const router = Router();
 
@@ -88,6 +89,7 @@ router.patch(
 router.use("/master", masterRoutes);
 router.use("/menu", menuAdminRoutes);
 router.use("/coupons", adminCouponsRoutes);
+router.use("/", adminVideosRoutes);
 
 router.get(
   "/feedback",
