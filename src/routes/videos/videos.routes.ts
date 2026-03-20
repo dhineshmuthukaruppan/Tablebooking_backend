@@ -8,6 +8,7 @@ import * as videosController from "../../controllers/videos";
 const router = Router();
 
 router.get("/", videosController.listVideosHandler);
+router.get("/preview", videosController.previewVideoHandler);
 router.post(
   "/",
   auth.authentication.authenticate,

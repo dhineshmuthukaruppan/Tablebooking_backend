@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../../databaseUtilities";
-import { extractYouTubeId, youtubeThumbnailUrl } from "../../../lib/videos/youtube";
+import { extractYouTubeId } from "../../../lib/videos/youtube";
+import { fetchYouTubePreview } from "../../../lib/videos/oembed";
 
 function isObjectIdLike(v: string): boolean {
   return /^[a-fA-F0-9]{24}$/.test(v);
@@ -24,10 +25,64 @@ export async function adminListVideosHandler(req: Request, res: Response): Promi
       connectionString,
       collection: "videos",
       query,
-      sort: { order: 1, createdAt: -1 },
+      sort: { createdAt: -1 },
     });
 
-    res.status(200).json({ message: "Videos", data: Array.isArray(list) ? list : [] });
+    const data = (Array.isArray(list) ? list : []).map((v) => {
+      const vid = v as any;
+      return {
+        _id: vid._id?.toString?.() ?? vid._id,
+        title: vid.title,
+        description: vid.description,
+        provider: vid.provider,
+        youtubeId: vid.youtubeId,
+        youtubeUrl: vid.youtubeUrl,
+        thumbnailUrl: vid.thumbnailUrl,
+        categoryId: vid.categoryId?.toString?.() ?? vid.categoryId,
+        isPublished: vid.isPublished,
+        isFeatured: vid.isFeatured,
+        order: vid.order,
+        createdAt: vid.createdAt,
+        updatedAt: vid.updatedAt,
+      };
+    });
+
+    // Sort by category order first (if present), then by video order.
+    const categoryIds = Array.from(new Set(data.map((v) => String(v.categoryId)).filter(Boolean))).filter(Boolean).map((id) => new ObjectId(id));
+
+    const categories = categoryIds.length
+      ? await db.read.find({
+          req,
+          connectionString,
+          collection: "video_categories",
+          query: { _id: { $in: categoryIds } },
+        })
+      : [];
+
+    const categoryOrderMap = new Map<string, number>();
+    for (const c of categories ?? []) {
+      const id = (c as any)?._id?.toString?.() ?? (c as any)?._id;
+      const o = (c as any)?.order;
+      if (id) categoryOrderMap.set(id.toString(), Number.isFinite(Number(o)) ? Number(o) : Number.MAX_SAFE_INTEGER);
+    }
+
+    data.sort((a, b) => {
+      const aCat = String(a.categoryId ?? "");
+      const bCat = String(b.categoryId ?? "");
+      const aCatOrder = categoryOrderMap.get(aCat) ?? Number.MAX_SAFE_INTEGER;
+      const bCatOrder = categoryOrderMap.get(bCat) ?? Number.MAX_SAFE_INTEGER;
+      if (aCatOrder !== bCatOrder) return aCatOrder - bCatOrder;
+
+      const aOrder = typeof a.order === "number" ? a.order : Number.MAX_SAFE_INTEGER;
+      const bOrder = typeof b.order === "number" ? b.order : Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    res.status(200).json({ message: "Videos", data });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -36,15 +91,10 @@ export async function adminListVideosHandler(req: Request, res: Response): Promi
 export async function adminCreateVideoHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
-    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
     const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
     const youtubeUrl = typeof req.body?.youtubeUrl === "string" ? req.body.youtubeUrl.trim() : "";
     const categoryIdStr = typeof req.body?.categoryId === "string" ? req.body.categoryId.trim() : "";
 
-    if (!title) {
-      res.status(400).json({ message: "Title is required" });
-      return;
-    }
     if (!youtubeUrl) {
       res.status(400).json({ message: "YouTube URL is required" });
       return;
@@ -66,46 +116,53 @@ export async function adminCreateVideoHandler(req: Request, res: Response): Prom
       return;
     }
 
-    const youtubeId = extractYouTubeId(youtubeUrl);
-    if (!youtubeId) {
-      res.status(400).json({ message: "Invalid YouTube URL" });
+    const maxOrderDocs = await db.read.find({
+      req,
+      connectionString,
+      collection: "videos",
+      query: { categoryId },
+      sort: { order: -1, createdAt: -1 },
+      limit: 1,
+    });
+    const maxOrder =
+      Array.isArray(maxOrderDocs) && maxOrderDocs.length > 0 ? (maxOrderDocs[0] as any)?.order : undefined;
+    const order = Number.isFinite(Number(maxOrder)) ? Number(maxOrder) + 1 : 1;
+
+    // Fetch preview (title + thumbnail) to prevent blind uploads
+    const preview = await fetchYouTubePreview(youtubeUrl).catch(() => null);
+    if (!preview) {
+      res.status(400).json({ message: "Invalid YouTube URL or failed to fetch preview" });
+      return;
+    }
+
+    const youtubeId = preview.youtubeId;
+
+    // Prevent duplicates (same youtubeId)
+    const existing = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "videos",
+      query: { youtubeId },
+    });
+    if (existing?._id) {
+      res.status(409).json({ message: "Video already added" });
       return;
     }
 
     const isPublished = req.body?.isPublished === false ? false : true;
     const isFeatured = req.body?.isFeatured === true;
-    const order = Number.isFinite(Number(req.body?.order)) ? Number(req.body.order) : 0;
-
-    let featuredOrder: number | undefined = undefined;
-    if (isFeatured) {
-      const fo = Number(req.body?.featuredOrder);
-      featuredOrder = Number.isFinite(fo) ? fo : undefined;
-      if (featuredOrder === undefined) {
-        const maxFeatured = await db.read.find({
-          req,
-          connectionString,
-          collection: "videos",
-          query: { isFeatured: true },
-          sort: { featuredOrder: -1 },
-          limit: 1,
-        });
-        const currentMax = (maxFeatured?.[0] as any)?.featuredOrder;
-        featuredOrder = Number.isFinite(Number(currentMax)) ? Number(currentMax) + 1 : 1;
-      }
-    }
 
     const now = new Date();
     const payload = {
-      title,
+      title: preview.title,
       description: description || undefined,
       provider: "youtube",
       youtubeId,
       youtubeUrl,
-      thumbnailUrl: youtubeThumbnailUrl(youtubeId),
+      thumbnailUrl: preview.thumbnailUrl,
       categoryId,
       isPublished,
       isFeatured,
-      featuredOrder: isFeatured ? featuredOrder : undefined,
       order,
       createdAt: now,
       updatedAt: now,
@@ -118,7 +175,14 @@ export async function adminCreateVideoHandler(req: Request, res: Response): Prom
       payload,
     });
 
-    res.status(201).json({ message: "Video created", data: { _id: result.insertedId, ...payload } });
+    res.status(201).json({
+      message: "Video created",
+      data: {
+        _id: result.insertedId.toString(),
+        ...payload,
+        categoryId: payload.categoryId.toString(),
+      },
+    });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -146,14 +210,6 @@ export async function adminPatchVideoHandler(req: Request, res: Response): Promi
     }
 
     const updates: Record<string, unknown> = {};
-    if (typeof req.body?.title === "string") {
-      const t = req.body.title.trim();
-      if (!t) {
-        res.status(400).json({ message: "Title is required" });
-        return;
-      }
-      updates.title = t;
-    }
     if (typeof req.body?.description === "string") {
       const d = req.body.description.trim();
       updates.description = d || undefined;
@@ -164,15 +220,29 @@ export async function adminPatchVideoHandler(req: Request, res: Response): Promi
         res.status(400).json({ message: "YouTube URL is required" });
         return;
       }
-      const youtubeId = extractYouTubeId(url);
-      if (!youtubeId) {
-        res.status(400).json({ message: "Invalid YouTube URL" });
+      const preview = await fetchYouTubePreview(url).catch(() => null);
+      if (!preview) {
+        res.status(400).json({ message: "Invalid YouTube URL or failed to fetch preview" });
         return;
       }
+
       updates.youtubeUrl = url;
-      updates.youtubeId = youtubeId;
-      updates.thumbnailUrl = youtubeThumbnailUrl(youtubeId);
+      updates.youtubeId = preview.youtubeId;
+      updates.title = preview.title;
+      updates.thumbnailUrl = preview.thumbnailUrl;
       updates.provider = "youtube";
+
+      // Prevent duplicates (same youtubeId) when updating URL
+      const duplicate = await db.read.findOne({
+        req,
+        connectionString,
+        collection: "videos",
+        query: { youtubeId: preview.youtubeId },
+      });
+      if (duplicate?._id && existing?._id && duplicate._id.toString() !== existing._id.toString()) {
+        res.status(409).json({ message: "Video already added" });
+        return;
+      }
     }
     if (typeof req.body?.categoryId === "string") {
       const cid = req.body.categoryId.trim();
@@ -194,30 +264,16 @@ export async function adminPatchVideoHandler(req: Request, res: Response): Promi
       updates.categoryId = categoryId;
     }
     if (typeof req.body?.isPublished === "boolean") updates.isPublished = req.body.isPublished;
+    if (typeof req.body?.isFeatured === "boolean") {
+      updates.isFeatured = req.body.isFeatured;
+    }
     if (req.body?.order !== undefined) {
       const order = Number(req.body.order);
-      if (!Number.isFinite(order)) {
+      if (!Number.isFinite(order) || order < 1) {
         res.status(400).json({ message: "Invalid order" });
         return;
       }
       updates.order = order;
-    }
-    if (typeof req.body?.isFeatured === "boolean") {
-      updates.isFeatured = req.body.isFeatured;
-      if (!req.body.isFeatured) {
-        updates.featuredOrder = undefined;
-      } else {
-        const fo = Number(req.body?.featuredOrder);
-        if (Number.isFinite(fo)) updates.featuredOrder = fo;
-      }
-    } else if (req.body?.featuredOrder !== undefined) {
-      const fo = Number(req.body.featuredOrder);
-      if (!Number.isFinite(fo)) {
-        res.status(400).json({ message: "Invalid featuredOrder" });
-        return;
-      }
-      updates.featuredOrder = fo;
-      updates.isFeatured = true;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -240,7 +296,16 @@ export async function adminPatchVideoHandler(req: Request, res: Response): Promi
       collection: "videos",
       query: { _id },
     });
-    res.status(200).json({ message: "Video updated", data: updated });
+    res.status(200).json({
+      message: "Video updated",
+      data: updated
+        ? {
+            ...(updated as any),
+            _id: (updated as any)._id?.toString?.() ?? (updated as any)._id,
+            categoryId: (updated as any).categoryId?.toString?.() ?? (updated as any).categoryId,
+          }
+        : updated,
+    });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -277,53 +342,38 @@ export async function adminReorderVideosHandler(req: Request, res: Response): Pr
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
     const items = Array.isArray(req.body?.items) ? req.body.items : null;
+    const categoryIdParam = typeof req.body?.categoryId === "string" ? req.body.categoryId.trim() : "";
+
     if (!items || items.length === 0) {
-      res.status(400).json({ message: "items is required" });
+      res.status(200).json({ message: "No changes" });
       return;
     }
 
-    for (const item of items) {
-      const id = typeof item?.id === "string" ? item.id.trim() : "";
-      const order = Number(item?.order);
-      if (!id || !isObjectIdLike(id) || !Number.isFinite(order)) continue;
+    let categoryId: ObjectId | null = null;
+    if (categoryIdParam) {
+      // Be tolerant: categoryId is optional for reordering, we can reorder purely by video _id.
+      if (isObjectIdLike(categoryIdParam)) categoryId = new ObjectId(categoryIdParam);
+    }
+
+    const now = new Date();
+    // Apply sequential order based on array position
+    for (let i = 0; i < items.length; i++) {
+      const id = typeof items[i]?.id === "string" ? items[i].id.trim() : "";
+      if (!id || !isObjectIdLike(id)) continue;
+      const _id = new ObjectId(id);
+      const query: Record<string, unknown> = { _id };
+      if (categoryId) query.categoryId = categoryId;
+
       await db.update.updateOne({
         req,
         connectionString,
         collection: "videos",
-        query: { _id: new ObjectId(id) },
-        update: { $set: { order, updatedAt: new Date() } },
+        query,
+        update: { $set: { order: i + 1, updatedAt: now } },
       });
     }
 
-    res.status(200).json({ message: "Reordered" });
-  } catch {
-    res.status(500).json({ message: "Internal server error" });
-  }
-}
-
-export async function adminReorderFeaturedVideosHandler(req: Request, res: Response): Promise<void> {
-  try {
-    const connectionString = db.constants.connectionStrings.tableBooking;
-    const items = Array.isArray(req.body?.items) ? req.body.items : null;
-    if (!items || items.length === 0) {
-      res.status(400).json({ message: "items is required" });
-      return;
-    }
-
-    for (const item of items) {
-      const id = typeof item?.id === "string" ? item.id.trim() : "";
-      const featuredOrder = Number(item?.featuredOrder);
-      if (!id || !isObjectIdLike(id) || !Number.isFinite(featuredOrder)) continue;
-      await db.update.updateOne({
-        req,
-        connectionString,
-        collection: "videos",
-        query: { _id: new ObjectId(id) },
-        update: { $set: { isFeatured: true, featuredOrder, updatedAt: new Date() } },
-      });
-    }
-
-    res.status(200).json({ message: "Featured reordered" });
+    res.status(200).json({ message: "Videos reordered" });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }

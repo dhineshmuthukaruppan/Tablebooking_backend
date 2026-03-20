@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../../databaseUtilities";
-import { toSlug } from "../../../lib/videos/slug";
 
 function isObjectIdLike(v: string): boolean {
   return /^[a-fA-F0-9]{24}$/.test(v);
@@ -15,9 +14,25 @@ export async function adminListVideoCategoriesHandler(req: Request, res: Respons
       connectionString,
       collection: "video_categories",
       query: {},
-      sort: { order: 1, name: 1 },
+      sort: { order: 1, createdAt: -1, name: 1 },
     });
-    res.status(200).json({ message: "Video categories", data: Array.isArray(list) ? list : [] });
+    const data = (Array.isArray(list) ? list : []).map((c) => {
+      const cat = c as {
+        _id?: ObjectId;
+        name?: string;
+        description?: string;
+        isActive?: boolean;
+        order?: number;
+      };
+      return {
+        _id: cat._id?.toString(),
+        name: cat.name,
+        description: cat.description,
+        isActive: cat.isActive,
+        order: cat.order,
+      };
+    });
+    res.status(200).json({ message: "Video categories", data });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -29,35 +44,26 @@ export async function adminCreateVideoCategoryHandler(req: Request, res: Respons
     const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
     const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
     const isActive = req.body?.isActive === false ? false : true;
-    const order = Number.isFinite(Number(req.body?.order)) ? Number(req.body.order) : 0;
 
     if (!name) {
       res.status(400).json({ message: "Category name is required" });
       return;
     }
 
-    const slugInput = typeof req.body?.slug === "string" ? req.body.slug.trim() : "";
-    const slug = toSlug(slugInput || name);
-    if (!slug) {
-      res.status(400).json({ message: "Invalid category slug" });
-      return;
-    }
-
-    const existing = await db.read.findOne({
+    const maxOrderDocs = await db.read.find({
       req,
       connectionString,
       collection: "video_categories",
-      query: { slug },
+      query: {},
+      sort: { order: -1, createdAt: -1 },
+      limit: 1,
     });
-    if (existing?._id) {
-      res.status(409).json({ message: "Category slug already exists" });
-      return;
-    }
+    const maxOrder = Array.isArray(maxOrderDocs) && maxOrderDocs.length > 0 ? (maxOrderDocs[0] as any)?.order : undefined;
+    const order = Number.isFinite(Number(maxOrder)) ? Number(maxOrder) + 1 : 1;
 
     const now = new Date();
     const payload = {
       name,
-      slug,
       description: description || undefined,
       isActive,
       order,
@@ -72,7 +78,10 @@ export async function adminCreateVideoCategoryHandler(req: Request, res: Respons
       payload,
     });
 
-    res.status(201).json({ message: "Category created", data: { _id: result.insertedId, ...payload } });
+    res.status(201).json({
+      message: "Category created",
+      data: { _id: result.insertedId.toString(), ...payload, order: payload.order },
+    });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -115,33 +124,11 @@ export async function adminPatchVideoCategoryHandler(req: Request, res: Response
     if (typeof req.body?.isActive === "boolean") updates.isActive = req.body.isActive;
     if (req.body?.order !== undefined) {
       const order = Number(req.body.order);
-      if (!Number.isFinite(order)) {
+      if (!Number.isFinite(order) || order < 1) {
         res.status(400).json({ message: "Invalid order" });
         return;
       }
       updates.order = order;
-    }
-    if (typeof req.body?.slug === "string") {
-      const slug = toSlug(req.body.slug.trim());
-      if (!slug) {
-        res.status(400).json({ message: "Invalid slug" });
-        return;
-      }
-      const conflict = await db.read.findOne({
-        req,
-        connectionString,
-        collection: "video_categories",
-        query: { slug, _id: { $ne: _id } },
-      });
-      if (conflict?._id) {
-        res.status(409).json({ message: "Category slug already exists" });
-        return;
-      }
-      updates.slug = slug;
-    } else if (updates.name && !(existing as any).slug) {
-      // Ensure slug exists if an old record had none.
-      const slug = toSlug(String(updates.name));
-      if (slug) updates.slug = slug;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -165,7 +152,18 @@ export async function adminPatchVideoCategoryHandler(req: Request, res: Response
       query: { _id },
     });
 
-    res.status(200).json({ message: "Category updated", data: updated });
+    res.status(200).json({
+      message: "Category updated",
+      data: updated
+        ? {
+            _id: (updated as any)._id?.toString?.() ?? (updated as any)._id,
+            name: (updated as any).name,
+            description: (updated as any).description,
+            isActive: (updated as any).isActive,
+            order: (updated as any).order,
+          }
+        : null,
+    });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -204,6 +202,43 @@ export async function adminDeleteVideoCategoryHandler(req: Request, res: Respons
     }
 
     res.status(200).json({ message: "Category deleted" });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function adminReorderVideoCategoriesHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const items = Array.isArray(req.body?.items) ? req.body.items : null;
+    if (!items || items.length === 0) {
+      res.status(400).json({ message: "items is required" });
+      return;
+    }
+
+    const ids: string[] = [];
+    for (const item of items) {
+      const id = typeof item?.id === "string" ? item.id.trim() : "";
+      if (id && isObjectIdLike(id)) ids.push(id);
+    }
+    if (ids.length === 0) {
+      res.status(400).json({ message: "Invalid items" });
+      return;
+    }
+
+    const now = new Date();
+    for (let i = 0; i < ids.length; i++) {
+      const _id = new ObjectId(ids[i]);
+      await db.update.updateOne({
+        req,
+        connectionString,
+        collection: "video_categories",
+        query: { _id },
+        update: { $set: { order: i + 1, updatedAt: now } },
+      });
+    }
+
+    res.status(200).json({ message: "Categories reordered" });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }

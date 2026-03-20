@@ -84,7 +84,6 @@ export interface CouponDocument {
 export interface VideoCategoryDocument {
   _id?: import("mongodb").ObjectId;
   name: string;
-  slug: string;
   description?: string;
   isActive?: boolean;
   order?: number;
@@ -105,7 +104,6 @@ export interface VideoDocument {
   categoryId: import("mongodb").ObjectId;
   isPublished?: boolean;
   isFeatured?: boolean;
-  featuredOrder?: number;
   order?: number;
   createdAt?: Date;
   updatedAt?: Date;

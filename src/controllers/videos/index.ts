@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import { fetchYouTubePreview } from "../../lib/videos/oembed";
 
 function isObjectIdLike(v: string): boolean {
   return /^[a-fA-F0-9]{24}$/.test(v);
@@ -9,40 +10,31 @@ function isObjectIdLike(v: string): boolean {
 export async function listVideosHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
-    const categoryParam = typeof req.query.category === "string" ? req.query.category.trim() : "";
+    const categoryIdParamRaw = typeof req.query.categoryId === "string" ? req.query.categoryId.trim() : "";
+    const categoryParamRaw = typeof req.query.category === "string" ? req.query.category.trim() : "";
+    const categoryIdParam = categoryIdParamRaw || (isObjectIdLike(categoryParamRaw) ? categoryParamRaw : "");
     const featuredParam = typeof req.query.featured === "string" ? req.query.featured.trim() : "";
     const pageParam = typeof req.query.page === "string" ? req.query.page.trim() : "";
     const limitParam = typeof req.query.limit === "string" ? req.query.limit.trim() : "";
 
-    const featuredOnly = featuredParam.toLowerCase() === "true" || featuredParam === "1";
+    const featuredProvided = featuredParam !== "";
+    const featuredValue = featuredProvided ? featuredParam.toLowerCase() === "true" || featuredParam === "1" : null;
     const page = Math.max(1, Number(pageParam || 1) || 1);
     const limit = Math.min(50, Math.max(1, Number(limitParam || 24) || 24));
     const skip = (page - 1) * limit;
 
     let categoryId: ObjectId | null = null;
-    if (categoryParam) {
-      if (isObjectIdLike(categoryParam)) {
-        categoryId = new ObjectId(categoryParam);
-      } else {
-        const category = await db.read.findOne({
-          req,
-          connectionString,
-          collection: "video_categories",
-          query: { slug: categoryParam },
-        });
-        if (category?._id) categoryId = category._id as ObjectId;
-      }
+    if (categoryIdParam) {
+      categoryId = new ObjectId(categoryIdParam);
     }
 
     const query: Record<string, unknown> = {
       isPublished: { $ne: false }, // public is published-only
     };
     if (categoryId) query.categoryId = categoryId;
-    if (featuredOnly) query.isFeatured = true;
+    if (featuredValue !== null) query.isFeatured = featuredValue;
 
-    const sort = featuredOnly
-      ? { featuredOrder: 1, order: 1, createdAt: -1 }
-      : { order: 1, createdAt: -1 };
+    const sort = { order: 1, createdAt: -1 };
 
     const [list, total] = await Promise.all([
       db.read.find({
@@ -80,10 +72,10 @@ export async function listVideosHandler(req: Request, res: Response): Promise<vo
         })
       : [];
 
-    const categoryMap = new Map<string, { _id: string; name?: string; slug?: string }>();
+    const categoryMap = new Map<string, { _id: string; name?: string }>();
     for (const c of categories ?? []) {
       const id = (c as { _id?: ObjectId })._id;
-      if (id) categoryMap.set(id.toString(), { _id: id.toString(), name: (c as any).name, slug: (c as any).slug });
+      if (id) categoryMap.set(id.toString(), { _id: id.toString(), name: (c as any).name });
     }
 
     const data = (list ?? []).map((v) => {
@@ -94,10 +86,9 @@ export async function listVideosHandler(req: Request, res: Response): Promise<vo
         description: (v as any).description,
         provider: (v as any).provider,
         youtubeId: (v as any).youtubeId,
-        youtubeUrl: (v as any).youtubeUrl,
         thumbnailUrl: (v as any).thumbnailUrl,
         isFeatured: Boolean((v as any).isFeatured),
-        featuredOrder: (v as any).featuredOrder ?? null,
+        order: typeof (v as any).order === "number" ? (v as any).order : null,
         category: catId ? categoryMap.get(catId) ?? null : null,
       };
     });
@@ -111,6 +102,21 @@ export async function listVideosHandler(req: Request, res: Response): Promise<vo
     });
   } catch {
     res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function previewVideoHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const url = typeof req.query.url === "string" ? req.query.url.trim() : "";
+    if (!url) {
+      res.status(400).json({ message: "Missing url" });
+      return;
+    }
+
+    const preview = await fetchYouTubePreview(url);
+    res.status(200).json({ message: "Video preview", data: preview });
+  } catch (e) {
+    res.status(400).json({ message: "Invalid YouTube URL or failed to fetch preview" });
   }
 }
 

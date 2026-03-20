@@ -32,6 +32,12 @@ router.delete(
   auth.privilege.requireRoles("admin", "staff"),
   adminVideosController.adminDeleteVideoCategoryHandler
 );
+router.patch(
+  "/video-categories/reorder",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminVideosController.adminReorderVideoCategoriesHandler
+);
 
 // Videos
 router.get(
@@ -63,12 +69,6 @@ router.patch(
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
   adminVideosController.adminReorderVideosHandler
-);
-router.patch(
-  "/videos/featured-reorder",
-  auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin", "staff"),
-  adminVideosController.adminReorderFeaturedVideosHandler
 );
 
 export const adminVideosRoutes = router;

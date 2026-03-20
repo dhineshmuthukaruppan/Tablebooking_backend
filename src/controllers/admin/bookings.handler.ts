@@ -121,7 +121,9 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
   try {
     const body = (req.body as AdminListBookingsBody) ?? {};
     const page = Math.max(1, Number(body.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(body.limit) || 20));
+    // When filtering by specific slots, we still want enough rows for the UI.
+    // Keep an upper cap to avoid heavy queries.
+    const limit = Math.min(500, Math.max(1, Number(body.limit) || 20));
     const skip = (page - 1) * limit;
 
     const connectionString = db.constants.connectionStrings.tableBooking;
