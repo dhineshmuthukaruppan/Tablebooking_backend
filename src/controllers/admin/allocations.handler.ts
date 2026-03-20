@@ -31,6 +31,11 @@ export interface AllocationDoc {
   status: string;
   allocatedBy: string;
   allocatedByName?: string;
+  coupon?: {
+    couponId?: string;
+    couponCode?: string;
+    appliedPercentage?: number | null;
+  };
   /** For offline/walk-in: slot and section for slot_inventory when recording payment. */
   slotStartTime?: string;
   slotEndTime?: string;
@@ -113,6 +118,11 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
       guestCount?: number;
       guestsAtThisTable: number;
       status: string;
+      coupon?: {
+        couponId?: string;
+        couponCode?: string;
+        appliedPercentage?: number | null;
+      };
       slotStartTime?: string;
       slotEndTime?: string;
       sectionId?: string;
@@ -126,6 +136,7 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
       if (!tableKeyRaw || !bookingIdRaw) continue;
       if (!TABLE_KEY_REGEX.test(tableKeyRaw)) continue;
       if (bookingIdRaw.length > MAX_BOOKING_ID_LENGTH) continue;
+      const isOffline = isOfflineBookingId(bookingIdRaw);
       const guestsAtThisTable =
         typeof o.guestsAtThisTable === "number" && o.guestsAtThisTable >= 0 && o.guestsAtThisTable <= MAX_GUESTS_AT_TABLE
           ? o.guestsAtThisTable
@@ -139,6 +150,26 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
       const slotEndTime = typeof o.slotEndTime === "string" && o.slotEndTime.trim() ? o.slotEndTime.trim() : undefined;
       const sectionId = typeof o.sectionId === "string" && o.sectionId.trim() ? o.sectionId.trim() : undefined;
       const sectionName = typeof o.sectionName === "string" && o.sectionName.trim() ? o.sectionName.trim() : undefined;
+
+      const couponRaw = typeof o.coupon === "object" && o.coupon != null ? (o.coupon as Record<string, unknown>) : null;
+      const coupon =
+        couponRaw && typeof couponRaw === "object"
+          ? {
+              couponId:
+                typeof couponRaw.couponId === "string"
+                  ? couponRaw.couponId
+                  : couponRaw.couponId != null
+                    ? String(couponRaw.couponId)
+                    : undefined,
+              couponCode: typeof couponRaw.couponCode === "string" ? couponRaw.couponCode : undefined,
+              appliedPercentage:
+                typeof couponRaw.appliedPercentage === "number"
+                  ? couponRaw.appliedPercentage
+                  : couponRaw.appliedPercentage === null
+                    ? null
+                    : undefined,
+            }
+          : undefined;
       allocations.push({
         allocationDate,
         tableKey: tableKeyRaw,
@@ -149,6 +180,7 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
         guestCount: typeof o.guestCount === "number" && o.guestCount >= 0 ? o.guestCount : undefined,
         guestsAtThisTable,
         status: typeof o.status === "string" && (o.status === "running" || o.status === "paid") ? o.status : "running",
+        ...(coupon && !isOffline ? { coupon } : {}),
         slotStartTime,
         slotEndTime,
         sectionId,
@@ -289,6 +321,7 @@ export async function postTableAllocationsHandler(req: Request, res: Response): 
         createdAt: now,
         updatedAt: now,
       };
+      if (a.coupon) base.coupon = a.coupon;
       if (a.slotStartTime != null) base.slotStartTime = a.slotStartTime;
       if (a.slotEndTime != null) base.slotEndTime = a.slotEndTime;
       if (a.sectionId != null) base.sectionId = a.sectionId;

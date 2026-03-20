@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import db from "../../databaseUtilities";
-import { uploadPhoto, getFileBuffer, deleteFile } from "../../config/gcs";
+import { generateSignedUploadUrl, getFileBuffer, deleteFile } from "../../config/gcs";
 
 type PhotoCategory = "ambience" | "food";
 
@@ -45,42 +45,79 @@ export async function listPhotosHandler(req: Request, res: Response): Promise<vo
 export async function uploadPhotoHandler(req: Request, res: Response): Promise<void> {
   try {
     const category = (req.body.category as PhotoCategory | undefined) ?? "ambience";
-    const file = (req as unknown as { file?: Express.Multer.File }).file;
+    const requestedFolder = typeof req.body.folder === "string" ? req.body.folder.trim() : undefined;
 
-    if (!file) {
-      res.status(400).json({ message: "Image file is required" });
+    // Menu signed uploads use "folder" = "categories" | "products".
+    // Regular landing-page photo signed uploads use "category" = "ambience" | "food".
+    const isMenuFolder = requestedFolder === "categories" || requestedFolder === "products";
+    const fileName = req.body.fileName;
+    const contentType = typeof req.body.contentType === "string" ? req.body.contentType : undefined;
+
+    if (!fileName || typeof fileName !== "string") {
+      res.status(400).json({ message: "fileName is required" });
       return;
     }
 
-    const uploadResult = await uploadPhoto({
-      buffer: file.buffer,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      category,
+    const safeName = fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const timestamp = Date.now();
+
+    const objectName = isMenuFolder
+      ? `table-booking/menu/${requestedFolder}/${timestamp}-${safeName}`
+      : `table-booking/${category}/${timestamp}-${safeName}`;
+
+    const { signedUrl } = await generateSignedUploadUrl({
+      objectName,
+      contentType,
     });
+
+    const serveUrl = `${SERVE_PATH}?object=${encodeURIComponent(objectName)}`;
+    res.status(201).json({
+      message: "Photo signed-url initialized",
+      signedUrl,
+      objectName,
+      data: { url: serveUrl, category },
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] uploadPhotoHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/**
+ * POST /photos/complete
+ * Create the DB row after the client successfully uploads to the signed URL.
+ */
+export async function completePhotoUploadHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const category = (req.body.category as PhotoCategory | undefined) ?? "ambience";
+    const objectName = typeof req.body.objectName === "string" ? req.body.objectName : "";
+
+    if (!objectName) {
+      res.status(400).json({ message: "objectName is required" });
+      return;
+    }
 
     await db.create.insertOne({
       req,
       connectionString: TABLE_BOOKING_CONN,
       collection: "venue_photos",
       payload: {
-        url: uploadResult.publicUrl,
-        objectName: uploadResult.objectName,
+        url: `${SERVE_PATH}?object=${encodeURIComponent(objectName)}`,
+        objectName,
         category,
         createdAt: new Date(),
       },
     });
 
+    const serveUrl = `${SERVE_PATH}?object=${encodeURIComponent(objectName)}`;
     res.status(201).json({
-      message: "Photo uploaded",
-      data: {
-        url: `${SERVE_PATH}?object=${encodeURIComponent(uploadResult.objectName)}`,
-        category,
-      },
+      message: "Photo upload completed",
+      data: { url: serveUrl, category },
     });
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error("[photos] uploadPhotoHandler error", error);
+    console.error("[photos] completePhotoUploadHandler error", error);
     res.status(500).json({ message: "Internal server error" });
   }
 }

@@ -337,7 +337,7 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
     const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId((staff.id as string).toString());
     const body = req.body as {
       status?: string;
-      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
+      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number; customDiscount?: boolean };
       payment?: {
         status?: "pending" | "paid";
         method?: "stripe" | "cash" | "card";
@@ -367,6 +367,7 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       guestCount?: number;
       status?: string;
       payment?: { status?: "pending" | "paid" | null };
+      // feedback?: unknown | null;
       coupon?: {
         couponId?: ObjectId;
         couponCode?: string;
@@ -404,10 +405,12 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
         typeof body.billing.finalAmount === "number"
           ? body.billing.finalAmount
           : (Number.isFinite(actual) ? actual : 0) - (Number.isFinite(discount) ? discount : 0);
+      const customDiscount = body.billing.customDiscount;
       updates.billing = {
         actualAmount: Number.isFinite(actual) ? actual : 0,
         discountAmount: Number.isFinite(discount) ? discount : 0,
         finalAmount: Math.max(0, finalAmount),
+        ...(customDiscount !== undefined ? { customDiscount: !!customDiscount } : {}),
       };
     }
 
@@ -442,63 +445,64 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       return;
     }
 
-    // Transaction: update booking and (optionally) redeem coupon + increment coupon totalUsed
-    const dbConn = (req.app.locals as Record<string, unknown>)[connectionString + "DB"] as import("mongodb").Db | undefined;
-    const client = (req.app.locals as Record<string, unknown>)[connectionString + "CLIENT"] as MongoClient | undefined;
-    if (!dbConn || !client) {
-      res.status(500).json({ message: "Database not available" });
-      return;
-    }
+    // // Transaction: update booking and (optionally) redeem coupon + increment coupon totalUsed
+    // const dbConn = (req.app.locals as Record<string, unknown>)[connectionString + "DB"] as import("mongodb").Db | undefined;
+    // const client = (req.app.locals as Record<string, unknown>)[connectionString + "CLIENT"] as MongoClient | undefined;
+    // if (!dbConn || !client) {
+    //   res.status(500).json({ message: "Database not available" });
+    //   return;
+    // }
 
-    const session = client.startSession();
-    try {
-      await session.withTransaction(async () => {
-        const bookingCol = dbConn.collection("bookings");
-        const couponsCol = dbConn.collection(db.constants.dbTables.coupons);
-        const redeemsCol = dbConn.collection("redeems");
+    // const session = client.startSession();
+    // try {
+    //   await session.withTransaction(async () => {
+    //     const bookingCol = dbConn.collection("bookings");
+    //     const couponsCol = dbConn.collection(db.constants.dbTables.coupons);
+    //     const redeemsCol = dbConn.collection("redeems");
 
-        const booking = (await bookingCol.findOne(query, { session })) as typeof existingBooking;
-        if (!booking?._id) {
-          throw new Error("Booking not found");
-        }
+    //     const booking = (await bookingCol.findOne(query, { session })) as typeof existingBooking;
+    //     if (!booking?._id) {
+    //       throw new Error("Booking not found");
+    //     }
 
-        const isPaidUpdate = body.payment?.status === "paid";
-        const coupon = booking.coupon ?? null;
-        const canRedeem =
-          isPaidUpdate &&
-          coupon?.isReserved === true &&
-          coupon?.isRedeemed !== true &&
-          coupon?.couponId instanceof ObjectId;
+    //     const isPaidUpdate = body.payment?.status === "paid";
+    //     const coupon = booking.coupon ?? null;
+    //     const canRedeem =
+    //       isPaidUpdate &&
+    //       coupon?.isReserved === true &&
+    //       coupon?.isRedeemed !== true &&
+    //       coupon?.couponId instanceof ObjectId &&
+    //       booking.feedback != null;
 
-        const txUpdates: Record<string, unknown> = { ...updates };
-        if (canRedeem) {
-          (txUpdates as Record<string, unknown>)["coupon.isRedeemed"] = true;
-          (txUpdates as Record<string, unknown>)["coupon.redeemedAt"] = now;
-        }
+    //     const txUpdates: Record<string, unknown> = { ...updates };
+    //     if (canRedeem) {
+    //       (txUpdates as Record<string, unknown>)["coupon.isRedeemed"] = true;
+    //       (txUpdates as Record<string, unknown>)["coupon.redeemedAt"] = now;
+    //     }
 
-        await bookingCol.updateOne(query, { $set: txUpdates }, { session });
+    //     await bookingCol.updateOne(query, { $set: txUpdates }, { session });
 
-        if (canRedeem) {
-          await couponsCol.updateOne(
-            { _id: coupon!.couponId as ObjectId },
-            { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
-            { session }
-          );
+    //     if (canRedeem) {
+    //       await couponsCol.updateOne(
+    //         { _id: coupon!.couponId as ObjectId },
+    //         { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
+    //         { session }
+    //       );
 
-          await redeemsCol.insertOne(
-            {
-              couponId: coupon!.couponId as ObjectId,
-              userId: booking.userId as ObjectId,
-              bookingId: booking._id as ObjectId,
-              redeemedAt: now,
-            },
-            { session }
-          );
-        }
-      });
-    } finally {
-      await session.endSession();
-    }
+    //       await redeemsCol.insertOne(
+    //         {
+    //           couponId: coupon!.couponId as ObjectId,
+    //           userId: booking.userId as ObjectId,
+    //           bookingId: booking._id as ObjectId,
+    //           redeemedAt: now,
+    //         },
+    //         { session }
+    //       );
+    //     }
+    //   });
+    // } finally {
+    //   await session.endSession();
+    // }
 
     const nextStatus = typeof body.status === "string" ? body.status : previousStatus;
     const shouldSendConfirmationEmail =
@@ -584,7 +588,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
     }
     const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId((staff.id as string).toString());
     const body = req.body as {
-      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
+      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number; customDiscount?: boolean };
       payment?: { status?: "pending" | "paid"; method?: "stripe" | "cash" | "card" };
       feedbackRequired?: boolean;
       customerName?: string;
@@ -601,6 +605,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
       typeof body.billing?.finalAmount === "number"
         ? body.billing.finalAmount
         : Math.max(0, (Number.isFinite(actual) ? actual : 0) - (Number.isFinite(discount) ? discount : 0));
+    const customDiscount = body.billing?.customDiscount;
     const method = body.payment?.method ?? "cash";
     const isOffline = method === "cash" || method === "card";
     const now = new Date();
@@ -672,6 +677,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
         actualAmount: Number.isFinite(actual) ? actual : 0,
         discountAmount: Number.isFinite(discount) ? discount : 0,
         finalAmount: Math.max(0, finalAmount),
+        ...(customDiscount !== undefined ? { customDiscount: !!customDiscount } : {}),
       },
       payment: {
         status: isOffline ? "paid" : (body.payment?.status ?? "pending"),

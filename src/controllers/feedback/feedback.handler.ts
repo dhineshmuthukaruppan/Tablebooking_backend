@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { ObjectId } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
 import { uploadPhoto, deleteFile } from "../../config/gcs";
 
@@ -90,6 +90,8 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
       atmosphereRating?: number;
       description?: string;
       images?: string[];
+      canRedeem?: boolean;
+      skipped?: boolean;
     };
     const bookingIdStr = typeof body.bookingId === "string" ? body.bookingId.trim() : "";
     if (!bookingIdStr || !ObjectId.isValid(bookingIdStr)) {
@@ -116,6 +118,21 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
     }
 
     const now = new Date();
+    const coupon = booking.coupon ?? null;
+    const skipped = body.skipped === true;
+    const bookingUserId =
+      booking.userId instanceof ObjectId
+        ? booking.userId
+        : typeof booking.userId === "string" && ObjectId.isValid(booking.userId)
+          ? new ObjectId(booking.userId)
+          : null;
+    const canRedeemRequested = body.canRedeem === true && !skipped;
+    const canRedeem =
+      canRedeemRequested &&
+      coupon?.isReserved === true &&
+      coupon?.isRedeemed !== true &&
+      coupon?.couponId instanceof ObjectId &&
+      bookingUserId != null;
     const userDisplayName = (user as { displayName?: string }).displayName;
     const userEmail = (user as { email?: string }).email ?? "";
     const feedbackDoc = {
@@ -128,6 +145,7 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
       description: description ?? undefined,
       images: images?.length ? images : undefined,
       isPublicVisible: false,
+      skipped: skipped ? true : undefined,
       profile: {
         user_name: userDisplayName ?? (userEmail || "Guest"),
         email: userEmail,
@@ -157,12 +175,58 @@ export async function submitFeedbackHandler(req: Request, res: Response): Promis
             rating: overallRating,
             comment: description ?? "",
             submittedAt: now,
+            ...(skipped ? { skipped: true } : {}),
           },
           updatedAt: now,
         },
       },
     });
 
+    // Mark allocations as feedback-given + redeem coupon (if allowed) in a single transaction.
+    const dbConn = (req.app.locals as Record<string, unknown>)[connectionString + "DB"] as import("mongodb").Db | undefined;
+    const client = (req.app.locals as Record<string, unknown>)[connectionString + "CLIENT"] as MongoClient | undefined;
+    if (dbConn && client) {
+      const session = client.startSession();
+      try {
+        await session.withTransaction(async () => {
+          const bookingCol = dbConn.collection("bookings");
+          const allocationsCol = dbConn.collection("table_allocations");
+          const couponsCol = dbConn.collection(db.constants.dbTables.coupons);
+          const redeemsCol = dbConn.collection("redeems");
+          if (canRedeem) {
+            // Run the 4 redemption operations concurrently within the same session/transaction.
+            await Promise.all([
+              allocationsCol.updateMany(
+                { bookingId: bookingIdStr },
+                { $set: { isFeedbackGiven: true, updatedAt: now } },
+                { session },
+              ),
+              bookingCol.updateOne(
+                { _id: new ObjectId(bookingIdStr) },
+                { $set: { "coupon.isRedeemed": true, "coupon.redeemedAt": now, updatedAt: now } },
+                { session }
+              ),
+              couponsCol.updateOne(
+                { _id: coupon!.couponId as ObjectId },
+                { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
+                { session }
+              ),
+              redeemsCol.insertOne(
+                {
+                  couponId: coupon!.couponId as ObjectId,
+                  userId: bookingUserId as ObjectId,
+                  bookingId: new ObjectId(bookingIdStr),
+                  redeemedAt: now,
+                },
+                { session }
+              ),
+            ]);
+          }
+        });
+      } finally {
+        await session.endSession();
+      }
+    }
     res.status(201).json({ message: "Feedback submitted", data: feedbackDoc });
   } catch {
     res.status(500).json({ message: "Internal server error" });

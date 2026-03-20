@@ -85,7 +85,7 @@ export async function getFeedbackPendingBookingsHandler(req: Request, res: Respo
         bookingDate: { $gte: start, $lte: end },
         status: "completed",
         feedbackRequired: true,
-        $or: [{ feedback: null }, { feedback: { $exists: false } }],
+        $or: [{ feedback: null },{feedback: {skipped: { $ne: true }}}, { feedback: { $exists: false } }],
       },
       sort: { bookingDate: -1 },
       limit: 10,
@@ -521,7 +521,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
         paidAt: null,
       },
       feedbackRequired: false,
-      feedback: null,
+      feedback: { skipped:false },
       createdAt: now,
       updatedAt: now,
     };

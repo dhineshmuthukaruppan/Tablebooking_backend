@@ -58,9 +58,11 @@ export async function postAdminCategoryHandler(req: Request, res: Response): Pro
       return;
     }
 
-    let coverImage: string | undefined;
+    // New flow: signed-url upload stores the GCS objectName in req.body.coverImage.
+    // Backward compatible: if a file is present, fall back to server-side upload.
+    let coverImage: string | undefined = getBodyString(req, "coverImage");
     const file = (req as unknown as { file?: Express.Multer.File }).file;
-    if (file?.buffer) {
+    if (!coverImage && file?.buffer) {
       const result = await uploadMenuImage({
         buffer: file.buffer,
         originalName: file.originalname,
@@ -113,8 +115,8 @@ export async function patchAdminCategoryHandler(req: Request, res: Response): Pr
     const clearCoverImage = getBodyBool(req, "clearCoverImage") === true;
 
     const file = (req as unknown as { file?: Express.Multer.File }).file;
-    let coverImage: string | undefined;
-    if (file?.buffer) {
+    let coverImage: string | undefined = getBodyString(req, "coverImage");
+    if (!coverImage && file?.buffer) {
       const result = await uploadMenuImage({
         buffer: file.buffer,
         originalName: file.originalname,
@@ -213,9 +215,11 @@ export async function postAdminProductHandler(req: Request, res: Response): Prom
       tags = tagsRaw.split(",").map((s) => s.trim()).filter(Boolean);
     }
 
-    let image: string | undefined;
+    // New flow: signed-url upload stores the GCS objectName in req.body.image.
+    // Backward compatible: if a file is present, fall back to server-side upload.
+    let image: string | undefined = getBodyString(req, "image");
     const file = (req as unknown as { file?: Express.Multer.File }).file;
-    if (file?.buffer) {
+    if (!image && file?.buffer) {
       const result = await uploadMenuImage({
         buffer: file.buffer,
         originalName: file.originalname,
@@ -283,8 +287,8 @@ export async function patchAdminProductHandler(req: Request, res: Response): Pro
     }
 
     const file = (req as unknown as { file?: Express.Multer.File }).file;
-    let image: string | undefined;
-    if (file?.buffer) {
+    let image: string | undefined = getBodyString(req, "image");
+    if (!image && file?.buffer) {
       const result = await uploadMenuImage({
         buffer: file.buffer,
         originalName: file.originalname,
