@@ -20,6 +20,13 @@ router.post(
   auth.privilege.requireRoles("admin", "staff"),
   adminVideosController.adminCreateVideoCategoryHandler
 );
+// Static path before :id — otherwise "reorder" is captured as an id
+router.patch(
+  "/video-categories/reorder",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminVideosController.adminReorderVideoCategoriesHandler
+);
 router.patch(
   "/video-categories/:id",
   auth.authentication.authenticate,
@@ -31,12 +38,6 @@ router.delete(
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
   adminVideosController.adminDeleteVideoCategoryHandler
-);
-router.patch(
-  "/video-categories/reorder",
-  auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin", "staff"),
-  adminVideosController.adminReorderVideoCategoriesHandler
 );
 
 // Videos
@@ -52,6 +53,13 @@ router.post(
   auth.privilege.requireRoles("admin", "staff"),
   adminVideosController.adminCreateVideoHandler
 );
+// Static path before :id — otherwise "reorder" is captured as an id (400 Invalid id)
+router.patch(
+  "/videos/reorder",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminVideosController.adminReorderVideosHandler
+);
 router.patch(
   "/videos/:id",
   auth.authentication.authenticate,
@@ -63,12 +71,6 @@ router.delete(
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
   adminVideosController.adminDeleteVideoHandler
-);
-router.patch(
-  "/videos/reorder",
-  auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin", "staff"),
-  adminVideosController.adminReorderVideosHandler
 );
 
 export const adminVideosRoutes = router;
