@@ -212,7 +212,7 @@ export async function adminReorderVideoCategoriesHandler(req: Request, res: Resp
     const connectionString = db.constants.connectionStrings.tableBooking;
     const items = Array.isArray(req.body?.items) ? req.body.items : null;
     if (!items || items.length === 0) {
-      res.status(400).json({ message: "items is required" });
+      res.status(200).json({ message: "No changes" });
       return;
     }
 
@@ -222,7 +222,7 @@ export async function adminReorderVideoCategoriesHandler(req: Request, res: Resp
       if (id && isObjectIdLike(id)) ids.push(id);
     }
     if (ids.length === 0) {
-      res.status(400).json({ message: "Invalid items" });
+      res.status(200).json({ message: "No changes" });
       return;
     }
 
