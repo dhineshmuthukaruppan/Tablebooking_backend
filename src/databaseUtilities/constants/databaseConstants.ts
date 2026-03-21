@@ -4,7 +4,7 @@
  */
 export const dbTables = {
   users: "users",
-  guest_date: "guest_date",
+  general_master: "general_master",
   meal_time_master: "meal_time_master",
   table_master: "table_master",
   bookings: "bookings",

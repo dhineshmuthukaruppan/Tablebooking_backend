@@ -2,11 +2,11 @@ import type { Request } from "express";
 import db from "../databaseUtilities";
 
 const connectionString = db.constants.connectionStrings.tableBooking;
-const GUEST_DATES_COLLECTION = "guest_date";
+const GENERAL_MASTER_COLLECTION = "general_master";
 const USERS_COLLECTION = "users";
 const CONFIG_QUERY = { type: "default" } as const;
 
-export interface GuestDatesConfigDocument {
+export interface GeneralMasterConfigDocument {
   type: "default";
   maxGuestCount?: number;
   maxDaysCount?: number;
@@ -22,25 +22,25 @@ export interface AdminContactUserDocument {
   createdAt?: Date;
 }
 
-export async function findGuestDatesConfig(
+export async function findGeneralMasterConfig(
   req: Request
-): Promise<GuestDatesConfigDocument | null> {
+): Promise<GeneralMasterConfigDocument | null> {
   return (await db.read.findOne({
     req,
     connectionString,
-    collection: GUEST_DATES_COLLECTION,
+    collection: GENERAL_MASTER_COLLECTION,
     query: CONFIG_QUERY,
-  })) as GuestDatesConfigDocument | null;
+  })) as GeneralMasterConfigDocument | null;
 }
 
-export async function upsertGuestDatesConfig(
+export async function upsertGeneralMasterConfig(
   req: Request,
-  updateFields: Partial<GuestDatesConfigDocument>
-): Promise<GuestDatesConfigDocument | null> {
+  updateFields: Partial<GeneralMasterConfigDocument>
+): Promise<GeneralMasterConfigDocument | null> {
   await db.update.findOneAndUpdate({
     req,
     connectionString,
-    collection: GUEST_DATES_COLLECTION,
+    collection: GENERAL_MASTER_COLLECTION,
     query: CONFIG_QUERY,
     update: {
       $set: updateFields,
@@ -51,7 +51,7 @@ export async function upsertGuestDatesConfig(
     options: { upsert: true },
   });
 
-  return findGuestDatesConfig(req);
+  return findGeneralMasterConfig(req);
 }
 
 export async function findAdminUserByEmail(

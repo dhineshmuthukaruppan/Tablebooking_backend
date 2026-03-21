@@ -7,7 +7,10 @@ import { auth } from "../../services";
 import * as feedbackController from "../../controllers/feedback";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
 
 // Public list of feedback already filtered by isPublicVisible === true
 router.get("/", feedbackController.listFeedbackHandler);

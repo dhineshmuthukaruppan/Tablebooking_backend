@@ -6,6 +6,8 @@ import * as slotInventory from "../../services/slotInventory";
 import * as slotConfigService from "../../services/slotConfig";
 import {
   sendAdminBookingCancellationEmail,
+  sendAdminBookingConfirmationEmail,
+  sendAdminPhoneUserBookingEmail,
   sendBookingCancellationEmail,
   sendBookingConfirmationEmail,
 } from "../../services/email/email.service";
@@ -16,7 +18,7 @@ import {
 } from "../../services/smsTemplates";
 import * as bookingSequence from "../../services/bookingSequence";
 
-const GUEST_DATE_QUERY = { type: "default" } as const;
+const GENERAL_MASTER_QUERY = { type: "default" } as const;
 
 function formatBookingDate(date: Date): string {
   return date.toLocaleDateString("en-IN", {
@@ -41,26 +43,21 @@ function buildBookingSmsData(params: {
   };
 }
 
-/** Start of today 00:00:00 UTC, end of today 23:59:59.999 UTC */
+/** Start of today 00:00:00 local time, end of today 23:59:59.999 local time */
 function getTodayRange(): { start: Date; end: Date } {
-  const iso = new Date().toISOString().slice(0, 10);
-  const start = new Date(iso + "T00:00:00.000Z");
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
-  end.setUTCMilliseconds(-1);
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   return { start, end };
 }
 
-/** Start of (today - daysOffset) 00:00:00 UTC, end of today 23:59:59.999 UTC */
+/** Start of (today - daysOffset) 00:00:00 local time, end of today 23:59:59.999 local time */
 function getWindowEndOfToday(daysOffset: number): { start: Date; end: Date } {
   const now = new Date();
-  const iso = now.toISOString().slice(0, 10);
-  const startOfToday = new Date(iso + "T00:00:00.000Z");
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const start = new Date(startOfToday);
-  start.setUTCDate(start.getUTCDate() - daysOffset);
-  const end = new Date(startOfToday);
-  end.setUTCDate(end.getUTCDate() + 1);
-  end.setUTCMilliseconds(-1);
+  start.setDate(start.getDate() - daysOffset);
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   return { start, end };
 }
 
@@ -83,7 +80,7 @@ export async function getFeedbackPendingBookingsHandler(req: Request, res: Respo
         bookingDate: { $gte: start, $lte: end },
         status: "completed",
         feedbackRequired: true,
-        $or: [{ feedback: null }, { feedback: { $exists: false } }],
+        $or: [{ feedback: null },{feedback: {skipped: { $ne: true }}}, { feedback: { $exists: false } }],
       },
       sort: { bookingDate: -1 },
       limit: 10,
@@ -197,8 +194,12 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       appliedPercentage?: number;
     };
     const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
-    const customerEmail = typeof body.customerEmail === "string" ? body.customerEmail.trim() : (user.email ?? "").toLowerCase();
-    const customerPhone = typeof body.customerPhone === "string" ? body.customerPhone.trim() : "";
+    const customerEmail =
+      typeof body.customerEmail === "string"
+        ? body.customerEmail.trim()
+        : (user.email ?? "").toLowerCase();
+    const customerPhone =
+      typeof body.customerPhone === "string" ? body.customerPhone.trim() : "";
     const bookingDateStr = typeof body.bookingDate === "string" ? body.bookingDate.trim() : "";
     const sectionIdStr = typeof body.sectionId === "string" ? body.sectionId.trim() : "";
     const sectionName = typeof body.sectionName === "string" ? body.sectionName.trim() : "";
@@ -477,8 +478,8 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       const guestDateDoc = await db.read.findOne({
         req,
         connectionString,
-        collection: "guest_date",
-        query: GUEST_DATE_QUERY,
+        collection: db.constants.dbTables.general_master,
+        query: GENERAL_MASTER_QUERY,
       }) as { allowBookingWhenSlotFull?: boolean } | null;
       const allowWhenFull = guestDateDoc?.allowBookingWhenSlotFull === true;
       if (allowWhenFull) {
@@ -544,6 +545,10 @@ export async function createBookingHandler(req: Request, res: Response): Promise
 
     const responseDoc = bookingId ? { ...doc, _id: bookingId } : doc;
 
+    const notificationPhone =
+      typeof user.phoneNumber === "string" ? user.phoneNumber.trim() : "";
+    const isPhoneAuth = user.authProvider === "phone";
+
     // Mark coupon as reserved (+1) after booking is created.
     if (appliedCoupon?.couponId) {
       void db.update
@@ -563,10 +568,12 @@ export async function createBookingHandler(req: Request, res: Response): Promise
       bookingId: bookingId ? bookingId.toString() : null,
       status,
       emailTriggered: Boolean(customerEmail && status === "confirmed"),
-      smsTriggered: Boolean(customerPhone && req.user?.role === "user" && status === "confirmed"),
+      smsTriggered: Boolean(
+        notificationPhone && isPhoneAuth && req.user?.role === "user" && status === "confirmed"
+      ),
     });
 
-    if (customerEmail && status === "confirmed") {
+    if (customerEmail && status === "confirmed" && !isPhoneAuth) {
       const bookingDateDisplay = formatBookingDate(bookingDate);
 
       const emailPayload = {
@@ -588,9 +595,15 @@ export async function createBookingHandler(req: Request, res: Response): Promise
         // eslint-disable-next-line no-console
         console.error("[booking] Booking confirmation email failed", err);
       });
+
+      // Also notify the admin contact for auto-confirmed bookings (email-auth users).
+      void sendAdminBookingConfirmationEmail(req, emailPayload).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[booking] Admin booking confirmation email failed", err);
+      });
     }
 
-    if (req.user?.role === "user" && customerPhone) {
+    if (req.user?.role === "user" && isPhoneAuth && notificationPhone) {
       const smsPayload = buildBookingSmsData({
         bookingId: bookingId ? bookingId.toString() : undefined,
         bookingDate,
@@ -604,8 +617,28 @@ export async function createBookingHandler(req: Request, res: Response): Promise
           bookingId: bookingId ? bookingId.toString() : null,
         });
         void sendSMS({
-          to: customerPhone,
+          to: notificationPhone,
           body: bookingConfirmedSMS(smsPayload),
+        });
+
+        const adminEmailPayload = {
+          customerEmail: undefined,
+          customerId: user.id.toString(),
+          customerName,
+          customerPhone: notificationPhone || undefined,
+          bookingId: bookingId ? bookingId.toString() : "",
+          bookingDate: formatBookingDate(bookingDate),
+          startTime,
+          endTime,
+          guests: guestCount,
+          section: sectionName,
+          venueName: "The Sheesha Factory",
+          location: "RS Puram, Coimbatore",
+        };
+
+        void sendAdminPhoneUserBookingEmail(req, adminEmailPayload).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error("[booking] Admin phone-user booking email failed", err);
         });
       }
     }
@@ -655,7 +688,6 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
       customerEmail?: string;
       customerName?: string;
       sectionName?: string;
-      customerPhone?: string;
       slot?: { startTime?: string; endTime?: string };
       guestCount?: number;
     };
@@ -686,16 +718,21 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
 
     if (
       currentStatus === "pending" &&
-      typeof b.customerEmail === "string" &&
-      b.customerEmail.trim() &&
       typeof b.customerName === "string" &&
+      b.customerName &&
       b.bookingDate &&
       b.slot?.startTime &&
       b.slot?.endTime &&
-      typeof b.sectionName === "string"
+      typeof b.sectionName === "string" &&
+      b.sectionName
     ) {
+      const trimmedEmail =
+        typeof b.customerEmail === "string" && b.customerEmail.trim()
+          ? b.customerEmail.trim()
+          : undefined;
+
       const emailPayload = {
-        customerEmail: b.customerEmail.trim(),
+        customerEmail: trimmedEmail,
         customerId: userId.toString(),
         customerName: b.customerName,
         bookingId: id,
@@ -710,10 +747,12 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
 
       console.log("EMAIL DEBUG → cancellation payload", emailPayload);
 
-      void sendBookingCancellationEmail(emailPayload).catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error("[booking] Booking cancellation email failed", err);
-      });
+      if (trimmedEmail) {
+        void sendBookingCancellationEmail(emailPayload).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error("[booking] Booking cancellation email failed", err);
+        });
+      }
 
       void sendAdminBookingCancellationEmail(req, emailPayload).catch((err) => {
         // eslint-disable-next-line no-console
@@ -721,18 +760,24 @@ export async function cancelBookingHandler(req: Request, res: Response): Promise
       });
     }
 
+    const notificationPhone =
+      typeof req.user?.phoneNumber === "string"
+        ? req.user.phoneNumber.trim()
+        : "";
+    const isPhoneAuth = req.user?.authProvider === "phone";
+
     if (
       req.user?.role === "user" &&
+      isPhoneAuth &&
       currentStatus === "pending" &&
-      typeof b.customerPhone === "string" &&
-      b.customerPhone.trim() &&
+      notificationPhone &&
       b.bookingDate &&
       b.slot?.startTime &&
       b.slot?.endTime
     ) {
       logger.info("SMS Trigger → Booking Cancelled", { bookingId: id });
       void sendSMS({
-        to: b.customerPhone.trim(),
+        to: notificationPhone,
         body: bookingCancelledSMS(
           buildBookingSmsData({
             bookingDate: b.bookingDate,
@@ -831,7 +876,7 @@ export async function getSlotsHandler(req: Request, res: Response): Promise<void
   }
 }
 
-/** Returns guest-dates config and active meal-time sections for the booking flow. When bookingDate query is present, returns date-aware slot config per section (data.sections). */
+/** Returns general master config and active meal-time sections for the booking flow. When bookingDate query is present, returns date-aware slot config per section (data.sections). */
 export async function getBookingConfigHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
@@ -842,13 +887,13 @@ export async function getBookingConfigHandler(req: Request, res: Response): Prom
       db.read.findOne({
         req,
         connectionString,
-        collection: "guest_date",
-        query: GUEST_DATE_QUERY,
+        collection: db.constants.dbTables.general_master,
+        query: GENERAL_MASTER_QUERY,
       }),
       db.read.find({
         req,
         connectionString,
-        collection: "meal_time_master",
+        collection: db.constants.dbTables.meal_time_master,
         query: { isActive: true },
         sort: { startTime: 1 },
       }),

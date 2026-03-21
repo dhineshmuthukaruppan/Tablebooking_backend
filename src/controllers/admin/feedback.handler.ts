@@ -46,7 +46,7 @@ export async function getAdminFeedbackHandler(req: Request, res: Response): Prom
   }
 }
 
-/** PATCH /admin/feedback/:id — set isPublicVisible and/or imageApprovals. Body: { isPublicVisible?: boolean, imageApprovals?: boolean[] } */
+/** PATCH /admin/feedback/:id — set isPublicVisible and/or media approvals. Body: { isPublicVisible?: boolean, imageApprovals?: boolean[], videoApprovals?: boolean[] } */
 export async function patchAdminFeedbackHandler(req: Request, res: Response): Promise<void> {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -54,13 +54,18 @@ export async function patchAdminFeedbackHandler(req: Request, res: Response): Pr
       res.status(400).json({ message: "Invalid feedback ID" });
       return;
     }
-    const body = req.body as { isPublicVisible?: boolean; imageApprovals?: boolean[] };
+    const body = req.body as {
+      isPublicVisible?: boolean;
+      imageApprovals?: boolean[];
+      videoApprovals?: boolean[];
+    };
     const update: Record<string, unknown> = { updatedAt: new Date() };
     if (typeof body.isPublicVisible === "boolean") update.isPublicVisible = body.isPublicVisible;
     if (Array.isArray(body.imageApprovals)) update.imageApprovals = body.imageApprovals;
+    if (Array.isArray(body.videoApprovals)) update.videoApprovals = body.videoApprovals;
 
     if (Object.keys(update).length <= 1) {
-      res.status(400).json({ message: "No valid fields to update (isPublicVisible, imageApprovals)" });
+      res.status(400).json({ message: "No valid fields to update (isPublicVisible, imageApprovals, videoApprovals)" });
       return;
     }
 

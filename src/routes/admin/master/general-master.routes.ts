@@ -1,5 +1,5 @@
 /**
- * Guest-dates config. Base path: /admin/master/guest-dates
+ * General master config. Base path: /admin/master/general-master
  */
 import { Router } from "express";
 import { auth } from "../../../services";
@@ -11,21 +11,21 @@ router.get(
   "/",
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
-  masterController.getGuestDatesConfigHandler
+  masterController.getGeneralMasterConfigHandler
 );
 
 router.put(
   "/",
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
-  masterController.updateGuestDatesConfigHandler
+  masterController.updateGeneralMasterConfigHandler
 );
 
 router.patch(
   "/admin-email",
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
-  masterController.updateGuestDatesAdminEmailHandler
+  masterController.updateGeneralMasterAdminEmailHandler
 );
 
-export const guestDatesRoutes = router;
+export const generalMasterRoutes = router;

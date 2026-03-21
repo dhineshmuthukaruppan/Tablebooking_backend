@@ -101,6 +101,38 @@ export async function uploadPhoto(params: {
   return { publicUrl, objectName };
 }
 
+export async function generateSignedUploadUrl(params: {
+  objectName: string;
+  contentType?: string;
+  expiresInMinutes?: number;
+}): Promise<{ signedUrl: string }> {
+  const bucket = await getBucket();
+  if (!bucket) {
+    throw new Error("GCS is not configured. Missing GCS_BUCKET.");
+  }
+
+  const { objectName, contentType, expiresInMinutes = 15 } = params;
+  if (!objectName || typeof objectName !== "string") {
+    throw new Error("[gcs] generateSignedUploadUrl: objectName is required");
+  }
+
+  const file = bucket.file(objectName);
+
+  // Signed URL for browser/direct upload (PUT).
+  const options: Record<string, unknown> = {
+    version: "v4",
+    action: "write",
+    expires: Date.now() + expiresInMinutes * 60 * 1000,
+  };
+  if (contentType) {
+    // When provided, uploaded file Content-Type must match.
+    options.contentType = contentType;
+  }
+
+  const [signedUrl] = await file.getSignedUrl(options as any);
+  return { signedUrl };
+}
+
 export type MenuImageFolder = "categories" | "products";
 
 /** Upload menu image (category cover or product image). Returns objectName to store in DB. */

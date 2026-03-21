@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { MongoClient, ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
+import { getAdminEmail } from "../../lib/getAdminEmail";
 import {
   sendAdminBookingCancellationEmail,
   sendAdminBookingConfirmationEmail,
@@ -140,6 +141,7 @@ export async function listAdminBookingsHandler(req: Request, res: Response): Pro
       slot: 1,
       guestCount: 1,
       status: 1,
+      coupon: 1,
       payment: 1,
       feedback: 1,
       feedbackRequired: 1,
@@ -338,7 +340,7 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
     const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId((staff.id as string).toString());
     const body = req.body as {
       status?: string;
-      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
+      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number; customDiscount?: boolean };
       payment?: {
         status?: "pending" | "paid";
         method?: "stripe" | "cash" | "card";
@@ -368,6 +370,7 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       guestCount?: number;
       status?: string;
       payment?: { status?: "pending" | "paid" | null };
+      // feedback?: unknown | null;
       coupon?: {
         couponId?: ObjectId;
         couponCode?: string;
@@ -392,8 +395,11 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
         res.status(400).json({ message: "Invalid status" });
         return;
       }
+      console.log("body.status", body.status);
       updates.status = body.status;
       updates.feedbackRequired = body.status === "completed";
+      console.log("body.status === completed", body.status === "completed");
+      console.log("updates.feedbackRequired", updates.feedbackRequired);
       (updates as Record<string, unknown>)["payment.status"] =
         body.status === "completed" ? "pending" : null;
     }
@@ -405,10 +411,12 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
         typeof body.billing.finalAmount === "number"
           ? body.billing.finalAmount
           : (Number.isFinite(actual) ? actual : 0) - (Number.isFinite(discount) ? discount : 0);
+      const customDiscount = body.billing.customDiscount;
       updates.billing = {
         actualAmount: Number.isFinite(actual) ? actual : 0,
         discountAmount: Number.isFinite(discount) ? discount : 0,
         finalAmount: Math.max(0, finalAmount),
+        ...(customDiscount !== undefined ? { customDiscount: !!customDiscount } : {}),
       };
     }
 
@@ -463,39 +471,40 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
           throw new Error("Booking not found");
         }
 
-        const isPaidUpdate = body.payment?.status === "paid";
-        const coupon = booking.coupon ?? null;
-        const canRedeem =
-          isPaidUpdate &&
-          coupon?.isReserved === true &&
-          coupon?.isRedeemed !== true &&
-          coupon?.couponId instanceof ObjectId;
+    //     const isPaidUpdate = body.payment?.status === "paid";
+    //     const coupon = booking.coupon ?? null;
+    //     const canRedeem =
+    //       isPaidUpdate &&
+    //       coupon?.isReserved === true &&
+    //       coupon?.isRedeemed !== true &&
+    //       coupon?.couponId instanceof ObjectId &&
+    //       booking.feedback != null;
 
         const txUpdates: Record<string, unknown> = { ...updates };
-        if (canRedeem) {
-          (txUpdates as Record<string, unknown>)["coupon.isRedeemed"] = true;
-          (txUpdates as Record<string, unknown>)["coupon.redeemedAt"] = now;
-        }
+    //     if (canRedeem) {
+    //       (txUpdates as Record<string, unknown>)["coupon.isRedeemed"] = true;
+    //       (txUpdates as Record<string, unknown>)["coupon.redeemedAt"] = now;
+    //     }
 
         await bookingCol.updateOne(query, { $set: txUpdates }, { session });
 
-        if (canRedeem) {
-          await couponsCol.updateOne(
-            { _id: coupon!.couponId as ObjectId },
-            { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
-            { session }
-          );
+    //     if (canRedeem) {
+    //       await couponsCol.updateOne(
+    //         { _id: coupon!.couponId as ObjectId },
+    //         { $inc: { totalUsed: 1 }, $set: { updatedAt: now } },
+    //         { session }
+    //       );
 
-          await redeemsCol.insertOne(
-            {
-              couponId: coupon!.couponId as ObjectId,
-              userId: booking.userId as ObjectId,
-              bookingId: booking._id as ObjectId,
-              redeemedAt: now,
-            },
-            { session }
-          );
-        }
+    //       await redeemsCol.insertOne(
+    //         {
+    //           couponId: coupon!.couponId as ObjectId,
+    //           userId: booking.userId as ObjectId,
+    //           bookingId: booking._id as ObjectId,
+    //           redeemedAt: now,
+    //         },
+    //         { session }
+    //       );
+    //     }
       });
     } finally {
       await session.endSession();
@@ -520,33 +529,7 @@ export async function patchBookingByAdminHandler(req: Request, res: Response): P
       existingBooking.slot.endTime.trim()
     ) {
 
-      const guestDateConfig = (await db.read.findOne({
-        req,
-        connectionString,
-        collection: "guest_date",
-        query: { type: "default" },
-        projection: { adminEmail: 1 },
-      })) as { adminEmail?: string | null } | null;
-      let ADMIN_EMAIL: string | null =
-        (typeof guestDateConfig?.adminEmail === "string" && guestDateConfig.adminEmail.trim())
-          ? guestDateConfig.adminEmail.trim()
-          : null;
-      if (!ADMIN_EMAIL) {
-        const adminUsers = (await db.read.find({
-          req,
-          connectionString,
-          collection: "users",
-          query: { role: "admin", email: { $exists: true, $nin: [null, ""] } },
-          projection: { email: 1 },
-          sort: { createdAt: 1 },
-          limit: 1,
-        })) as { email?: string }[];
-        const firstAdmin = adminUsers?.[0];
-        ADMIN_EMAIL =
-          typeof firstAdmin?.email === "string" && firstAdmin.email.trim()
-            ? firstAdmin.email.trim()
-            : null;
-      }
+      const ADMIN_EMAIL = await getAdminEmail(req, connectionString);
       const emailPayload = {
         customerEmail: existingBooking.customerEmail?.trim(),
         adminEmail: ADMIN_EMAIL ?? undefined,
@@ -611,7 +594,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
     }
     const staffId = staff.id instanceof ObjectId ? staff.id : new ObjectId((staff.id as string).toString());
     const body = req.body as {
-      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number };
+      billing?: { actualAmount?: number; discountAmount?: number; finalAmount?: number; customDiscount?: boolean };
       payment?: { status?: "pending" | "paid"; method?: "stripe" | "cash" | "card" };
       feedbackRequired?: boolean;
       customerName?: string;
@@ -628,6 +611,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
       typeof body.billing?.finalAmount === "number"
         ? body.billing.finalAmount
         : Math.max(0, (Number.isFinite(actual) ? actual : 0) - (Number.isFinite(discount) ? discount : 0));
+    const customDiscount = body.billing?.customDiscount;
     const method = body.payment?.method ?? "cash";
     const isOffline = method === "cash" || method === "card";
     const now = new Date();
@@ -699,6 +683,7 @@ export async function postWalkInPaymentHandler(req: Request, res: Response): Pro
         actualAmount: Number.isFinite(actual) ? actual : 0,
         discountAmount: Number.isFinite(discount) ? discount : 0,
         finalAmount: Math.max(0, finalAmount),
+        ...(customDiscount !== undefined ? { customDiscount: !!customDiscount } : {}),
       },
       payment: {
         status: isOffline ? "paid" : (body.payment?.status ?? "pending"),

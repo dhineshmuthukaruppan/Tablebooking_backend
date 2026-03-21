@@ -12,13 +12,13 @@ router.get("/categories", ...authAdminStaff, menuController.getAdminCategoriesHa
 router.post(
   "/categories",
   ...authAdminStaff,
-  upload.single("coverImage"),
+  upload.none(),
   menuController.postAdminCategoryHandler
 );
 router.patch(
   "/categories/:id",
   ...authAdminStaff,
-  upload.single("coverImage"),
+  upload.none(),
   menuController.patchAdminCategoryHandler
 );
 
@@ -26,13 +26,13 @@ router.get("/products", ...authAdminStaff, menuController.getAdminProductsHandle
 router.post(
   "/products",
   ...authAdminStaff,
-  upload.single("image"),
+  upload.none(),
   menuController.postAdminProductHandler
 );
 router.patch(
   "/products/:id",
   ...authAdminStaff,
-  upload.single("image"),
+  upload.none(),
   menuController.patchAdminProductHandler
 );
 
