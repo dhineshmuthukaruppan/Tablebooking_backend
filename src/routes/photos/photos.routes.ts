@@ -21,12 +21,31 @@ router.post(
   photosController.completePhotoUploadHandler
 );
 
-router.delete(
-  "/",
+router.post(
+  "/user-upload",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin", "staff"),
-  photosController.deletePhotoHandler
+  photosController.userUploadPhotoHandler
 );
 
-export const photosRoutes = router;
+router.post(
+  "/user-upload/complete",
+  auth.authentication.authenticate,
+  photosController.completeUserPhotoUploadHandler
+);
+
+router.get(
+  "/admin",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin"),
+  photosController.listUserImagesHandler
+);
+
+router.patch(
+  "/admin/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin"),
+  photosController.approveUserImageHandler
+);
+
+export { router as photosRoutes };
 

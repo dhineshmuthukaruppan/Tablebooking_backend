@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import db from "../../databaseUtilities";
+import { ObjectId } from "mongodb";
 import { generateSignedUploadUrl, getFileBuffer, deleteFile } from "../../config/gcs";
 
 type PhotoCategory = "ambience" | "food";
@@ -168,6 +169,217 @@ export async function servePhotoHandler(req: Request, res: Response): Promise<vo
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("[photos] servePhotoHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function userUploadPhotoHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const category = req.body.category as PhotoCategory;
+    if (!category || !["ambience", "food"].includes(category)) {
+      res.status(400).json({ message: "Invalid category" });
+      return;
+    }
+    const fileNames = req.body.fileNames as string[];
+    const contentTypes = req.body.contentTypes as string[];
+    if (!Array.isArray(fileNames) || fileNames.length === 0) {
+      res.status(400).json({ message: "fileNames required" });
+      return;
+    }
+    const uploads = [];
+    for (let i = 0; i < fileNames.length; i++) {
+      const fileName = fileNames[i];
+      const contentType = contentTypes?.[i];
+      const safeName = fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const timestamp = Date.now();
+      const objectName = `table-booking/user-uploads/${user.id}/${timestamp}-${safeName}`;
+      const { signedUrl } = await generateSignedUploadUrl({ objectName, contentType });
+      uploads.push({ signedUrl, objectName, url: `${SERVE_PATH}?object=${encodeURIComponent(objectName)}` });
+    }
+    res.status(201).json({
+      message: "Signed URLs generated",
+      uploads,
+      category,
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] userUploadPhotoHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function completeUserPhotoUploadHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const category = req.body.category as PhotoCategory;
+    const objectNames = req.body.objectNames as string[];
+    if (!category || !Array.isArray(objectNames) || objectNames.length === 0) {
+      res.status(400).json({ message: "Invalid data" });
+      return;
+    }
+    const images = objectNames.map(obj => ({ url: `${SERVE_PATH}?object=${encodeURIComponent(obj)}`, objectName: obj }));
+    await db.create.insertOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      payload: {
+        userId: user.id,
+        userName: user.displayName || "",
+        userRole: user.role || "user",
+        category,
+        images,
+        isApproved: false,
+        createdAt: new Date(),
+      },
+    });
+    res.status(201).json({ message: "Upload completed" });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] completeUserPhotoUploadHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function listUserImagesHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const status = req.query.status as "approved" | "not_approved";
+    const userRole = req.query.userRole as "staff" | "user" | "both";
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const query: any = {};
+    if (status === "approved") query.isApproved = true;
+    else if (status === "not_approved") query.isApproved = false;
+    if (userRole === "staff") query.userRole = "staff";
+    else if (userRole === "user") query.userRole = "user";
+    const skip = (page - 1) * limit;
+    const docs = await db.read.find({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      query,
+      sort: { createdAt: -1 },
+      skip,
+      limit,
+    });
+    const total = await db.read.count({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      query,
+    });
+    res.status(200).json({
+      data: docs,
+      total,
+      page,
+      limit,
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] listUserImagesHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function approveUserImageHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const id = new ObjectId(req.params.id);
+    const imageApprovals = req.body.imageApprovals as boolean[] | undefined;
+    
+    if (!Array.isArray(imageApprovals) || imageApprovals.length === 0) {
+      res.status(400).json({ message: "imageApprovals array required" });
+      return;
+    }
+
+    const doc = await db.read.findOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      query: { _id: id },
+    });
+    
+    if (!doc) {
+      res.status(404).json({ message: "Not found" });
+      return;
+    }
+
+    const images = doc.images ?? [];
+    if (imageApprovals.length !== images.length) {
+      res.status(400).json({ message: "imageApprovals length must match images length" });
+      return;
+    }
+
+    // Process each image approval
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      const isApproved = imageApprovals[i];
+
+      if (isApproved) {
+        // Add to venue_photos if approved
+        const exists = await db.read.findOne({
+          req,
+          connectionString: TABLE_BOOKING_CONN,
+          collection: "venue_photos",
+          query: { objectName: img.objectName },
+        });
+
+        if (!exists) {
+          await db.create.insertOne({
+            req,
+            connectionString: TABLE_BOOKING_CONN,
+            collection: "venue_photos",
+            payload: {
+              url: img.url,
+              objectName: img.objectName,
+              category: doc.category,
+              createdAt: new Date(),
+            },
+          });
+        }
+      } else {
+        // Remove from venue_photos if disapproved
+        await db.update.updateOne({
+          req,
+          connectionString: TABLE_BOOKING_CONN,
+          collection: "venue_photos",
+          query: { objectName: img.objectName },
+          update: { $set: { isDeleted: true, deletedAt: new Date() } },
+        });
+      }
+    }
+
+    // Set document isApproved to true if ANY image is approved
+    const hasApprovedImages = imageApprovals.some((a) => a === true);
+
+    await db.update.updateOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      query: { _id: id },
+      update: { 
+        $set: { 
+          imageApprovals,
+          isApproved: hasApprovedImages,
+          updatedAt: new Date() 
+        } 
+      },
+    });
+
+    res.status(200).json({ 
+      message: "Image approvals updated",
+      data: { isApproved: hasApprovedImages, imageApprovals }
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] approveUserImageHandler error", error);
     res.status(500).json({ message: "Internal server error" });
   }
 }
