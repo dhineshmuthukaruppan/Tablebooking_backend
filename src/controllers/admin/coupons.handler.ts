@@ -306,6 +306,9 @@ export async function updateCouponHandler(req: Request, res: Response): Promise<
     }
     if (typeof body.isActive === "boolean") {
       update.isActive = body.isActive;
+      if (body.isActive === true) {
+        update.deletedAt = null;
+      }
     }
     if (typeof body.oneTimePerUser === "boolean") {
       update.oneTimePerUser = body.oneTimePerUser;

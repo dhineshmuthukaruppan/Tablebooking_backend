@@ -80,8 +80,8 @@ export async function dashboardHandler(req: Request, res: Response): Promise<voi
       // 11a. Approved feedbacks
       feedbacksCol.countDocuments({ isPublicVisible: true }),
 
-      // 11b. Rejected feedbacks (explicitly set to false)
-      feedbacksCol.countDocuments({ isPublicVisible: false }),
+      // 11b. Rejected feedbacks (isPublicVisible false and isRejected true)
+      feedbacksCol.countDocuments({ isRejected: true }),
 
       // 6+7. Revenue + discount
       bookingsCol.aggregate([
@@ -119,7 +119,7 @@ export async function dashboardHandler(req: Request, res: Response): Promise<voi
 
       // 12. Busy hours
       bookingsCol.aggregate([
-        { $match: { "slot.startTime": { $exists: true, $ne: null, $ne: "" } } },
+        { $match: { "slot.startTime": { $exists: true, $ne: null } } },
         { $group: { _id: "$slot.startTime", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 24 },
@@ -128,8 +128,8 @@ export async function dashboardHandler(req: Request, res: Response): Promise<voi
       // 4+5. Coupon breakdown
       couponsCol
         .find(
-          { deletedAt: { $exists: false } },
-          { projection: { code: 1, description: 1, totalUsed: 1, totalReserved: 1 } }
+          { deletedAt: { $eq: null } },
+          { projection: { code: 1, description: 1, totalUsed: 1, totalReserved: 1 ,expireDate: 1} }
         )
         .toArray(),
     ]);

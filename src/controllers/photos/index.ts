@@ -332,7 +332,7 @@ export async function completeUserPhotoUploadHandler(req: Request, res: Response
 
 export async function listUserImagesHandler(req: Request, res: Response): Promise<void> {
   try {
-    const status = req.query.status as "approved" | "not_approved";
+    const status = req.query.status as "approved" | "not_approved" | "rejected";
     const userRole = req.query.userRole as "staff" | "user" | "both" | undefined;
     const category = req.query.category as string | undefined;
     const dateFrom = req.query.dateFrom as string | undefined;
@@ -341,8 +341,15 @@ export async function listUserImagesHandler(req: Request, res: Response): Promis
     const limit = parseInt(req.query.limit as string) || 10;
 
     const query: Record<string, unknown> = {};
-    if (status === "approved") query.isApproved = true;
-    else if (status === "not_approved") query.isApproved = false;
+    if (status === "approved") {
+      query.isApproved = true;
+    } else if (status === "rejected") {
+      query.isRejected = true;
+    } else {
+      // not_approved: exclude both approved and rejected
+      query.isApproved = false;
+      query.$or = [{ isRejected: false }, { isRejected: { $exists: false } }];
+    }
     if (userRole === "staff") query.userRole = "staff";
     else if (userRole === "user") query.userRole = "user";
     if (category && category !== "all") query.category = category;
@@ -382,6 +389,26 @@ export async function approveUserImageHandler(req: Request, res: Response): Prom
   try {
     const id = new ObjectId(req.params.id);
     const imageApprovals = req.body.imageApprovals as boolean[] | undefined;
+    const isRejected = req.body.isRejected as boolean | undefined;
+
+    // Allow isRejected-only updates (no imageApprovals required)
+    if (typeof isRejected === "boolean" && !Array.isArray(imageApprovals)) {
+      await db.update.updateOne({
+        req,
+        connectionString: TABLE_BOOKING_CONN,
+        collection: "images",
+        query: { _id: id },
+        update: {
+          $set: {
+            isRejected,
+            isApproved: false,
+            updatedAt: new Date(),
+          },
+        },
+      });
+      res.status(200).json({ message: "Image rejection updated", data: { isRejected, isApproved: false } });
+      return;
+    }
 
     if (!Array.isArray(imageApprovals) || imageApprovals.length === 0) {
       res.status(400).json({ message: "imageApprovals array required" });
