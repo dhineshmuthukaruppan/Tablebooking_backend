@@ -1,0 +1,735 @@
+{
+  "info": {
+    "name": "Table Booking Backend - All In One",
+    "description": "Unified collection combining Admin, Auth & Verification, and Public & User APIs. Includes updated feedback media/video APIs and recent backend changes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5001/api/v1" },
+    { "key": "bearerToken", "value": "" },
+    { "key": "firebaseIdToken", "value": "" },
+    { "key": "newUserFirebaseIdToken", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "customerId", "value": "" },
+    { "key": "categoryId", "value": "" },
+    { "key": "categorySlug", "value": "" },
+    { "key": "productSlug", "value": "" },
+    { "key": "objectName", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Bookings",
+          "item": [
+            {
+              "name": "List bookings (admin/staff, paginated + filters)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"page\": 1,\n  \"limit\": 25,\n  \"status\": [\"pending\", \"confirmed\", \"completed\"],\n  \"bookingDateStart\": \"2026-03-01\",\n  \"bookingDateEnd\": \"2026-03-31\",\n  \"feedback\": \"required\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/bookings/list",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "bookings", "list"]
+                }
+              }
+            },
+            {
+              "name": "Update booking (status / billing / payment / feedbackRequired)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"completed\",\n  \"billing\": {\n    \"actualAmount\": 2000,\n    \"discountAmount\": 100,\n    \"finalAmount\": 1900,\n    \"customDiscount\": false\n  },\n  \"payment\": {\n    \"status\": \"paid\",\n    \"method\": \"cash\"\n  },\n  \"feedbackRequired\": true\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/bookings/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "bookings", ":id"]
+                }
+              }
+            },
+            {
+              "name": "Walk-in booking payment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerName\": \"Walk-in Customer\",\n  \"guestCount\": 2,\n  \"sectionName\": \"Indoor\",\n  \"bookingDate\": \"2026-03-21\",\n  \"billing\": {\n    \"actualAmount\": 150,\n    \"discountAmount\": 0,\n    \"finalAmount\": 150,\n    \"customDiscount\": false\n  },\n  \"payment\": {\n    \"status\": \"paid\",\n    \"method\": \"cash\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/bookings/walk-in",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "bookings", "walk-in"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Master",
+          "item": [
+            {
+              "name": "General master - get",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/master/general-master", "host": ["{{baseUrl}}"], "path": ["admin", "master", "general-master"] }
+              }
+            },
+            {
+              "name": "General master - update",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"maxGuestsPerDay\": 100\n}" },
+                "url": { "raw": "{{baseUrl}}/admin/master/general-master", "host": ["{{baseUrl}}"], "path": ["admin", "master", "general-master"] }
+              }
+            },
+            {
+              "name": "Meal-time - list",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/master/meal-time", "host": ["{{baseUrl}}"], "path": ["admin", "master", "meal-time"] }
+              }
+            },
+            {
+              "name": "Meal-time - get by id",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/master/meal-time/:id", "host": ["{{baseUrl}}"], "path": ["admin", "master", "meal-time", ":id"] }
+              }
+            },
+            {
+              "name": "Meal-time - create",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"Dinner\",\n  \"startTime\": \"19:00\",\n  \"endTime\": \"23:00\",\n  \"isActive\": true\n}" },
+                "url": { "raw": "{{baseUrl}}/admin/master/meal-time", "host": ["{{baseUrl}}"], "path": ["admin", "master", "meal-time"] }
+              }
+            },
+            {
+              "name": "Meal-time - update",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Dinner\",\n  \"isActive\": true\n}" },
+                "url": { "raw": "{{baseUrl}}/admin/master/meal-time/:id", "host": ["{{baseUrl}}"], "path": ["admin", "master", "meal-time", ":id"] }
+              }
+            },
+            {
+              "name": "Meal-time - delete",
+              "request": {
+                "method": "DELETE",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/master/meal-time/:id", "host": ["{{baseUrl}}"], "path": ["admin", "master", "meal-time", ":id"] }
+              }
+            },
+            {
+              "name": "Location & timing - get",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/master/location-timing", "host": ["{{baseUrl}}"], "path": ["admin", "master", "location-timing"] }
+              }
+            },
+            {
+              "name": "Location & timing - update",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"address\": \"Dubai\",\n  \"openingTime\": \"10:00\",\n  \"closingTime\": \"23:00\"\n}" },
+                "url": { "raw": "{{baseUrl}}/admin/master/location-timing", "host": ["{{baseUrl}}"], "path": ["admin", "master", "location-timing"] }
+              }
+            },
+            {
+              "name": "Facilities - get",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/master/facilities", "host": ["{{baseUrl}}"], "path": ["admin", "master", "facilities"] }
+              }
+            },
+            {
+              "name": "Facilities - update",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"facilities\": [{ \"name\": \"WiFi\", \"isActive\": true }]\n}" },
+                "url": { "raw": "{{baseUrl}}/admin/master/facilities", "host": ["{{baseUrl}}"], "path": ["admin", "master", "facilities"] }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Menu",
+          "item": [
+            {
+              "name": "Categories - list",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/menu/categories", "host": ["{{baseUrl}}"], "path": ["admin", "menu", "categories"] }
+              }
+            },
+            {
+              "name": "Categories - create (multipart)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "name", "value": "Starters", "type": "text" },
+                    { "key": "slug", "value": "starters", "type": "text" },
+                    { "key": "coverImage", "type": "file", "src": [] }
+                  ]
+                },
+                "url": { "raw": "{{baseUrl}}/admin/menu/categories", "host": ["{{baseUrl}}"], "path": ["admin", "menu", "categories"] }
+              }
+            },
+            {
+              "name": "Categories - update (multipart)",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "name", "value": "Updated Starters", "type": "text" },
+                    { "key": "slug", "value": "updated-starters", "type": "text" },
+                    { "key": "coverImage", "type": "file", "src": [], "disabled": true }
+                  ]
+                },
+                "url": { "raw": "{{baseUrl}}/admin/menu/categories/:id", "host": ["{{baseUrl}}"], "path": ["admin", "menu", "categories", ":id"] }
+              }
+            },
+            {
+              "name": "Products - list",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/menu/products", "host": ["{{baseUrl}}"], "path": ["admin", "menu", "products"] }
+              }
+            },
+            {
+              "name": "Products - create (multipart)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "name", "value": "Paneer Tikka", "type": "text" },
+                    { "key": "slug", "value": "paneer-tikka", "type": "text" },
+                    { "key": "categoryId", "value": "{{categoryId}}", "type": "text" },
+                    { "key": "price", "value": "250", "type": "text" },
+                    { "key": "image", "type": "file", "src": [] }
+                  ]
+                },
+                "url": { "raw": "{{baseUrl}}/admin/menu/products", "host": ["{{baseUrl}}"], "path": ["admin", "menu", "products"] }
+              }
+            },
+            {
+              "name": "Products - update (multipart)",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "name", "value": "Updated Paneer Tikka", "type": "text" },
+                    { "key": "categoryId", "value": "{{categoryId}}", "type": "text" },
+                    { "key": "price", "value": "275", "type": "text" }
+                  ]
+                },
+                "url": { "raw": "{{baseUrl}}/admin/menu/products/:id", "host": ["{{baseUrl}}"], "path": ["admin", "menu", "products", ":id"] }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Feedback",
+          "item": [
+            {
+              "name": "List feedback (admin/staff, paginated by status)",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback?page=1&limit=10&status=not_approved",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "feedback"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "10" },
+                    { "key": "status", "value": "not_approved" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Patch feedback (isPublicVisible / imageApprovals / videoApprovals)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isPublicVisible\": true,\n  \"imageApprovals\": [true, false],\n  \"videoApprovals\": [true]\n}"
+                },
+                "url": { "raw": "{{baseUrl}}/admin/feedback/:id", "host": ["{{baseUrl}}"], "path": ["admin", "feedback", ":id"] }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dashboard & Jobs",
+          "item": [
+            {
+              "name": "Dashboard summary",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/admin/dashboard", "host": ["{{baseUrl}}"], "path": ["admin", "dashboard"] }
+              }
+            },
+            {
+              "name": "Cleanup slot inventory job",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"dryRun\": true\n}" },
+                "url": { "raw": "{{baseUrl}}/admin/jobs/cleanup-slot-inventory", "host": ["{{baseUrl}}"], "path": ["admin", "jobs", "cleanup-slot-inventory"] }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth and Verification",
+      "item": [
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Register",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+                "body": { "mode": "raw", "raw": "{\n  \"idToken\": \"{{firebaseIdToken}}\",\n  \"displayName\": \"John Doe\"\n}" },
+                "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+              }
+            },
+            {
+              "name": "Signin",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+                "body": { "mode": "raw", "raw": "{\n  \"idToken\": \"{{firebaseIdToken}}\"\n}" },
+                "url": { "raw": "{{baseUrl}}/auth/signin", "host": ["{{baseUrl}}"], "path": ["auth", "signin"] }
+              }
+            },
+            {
+              "name": "Get current user (me)",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+              }
+            }
+          ]
+        },
+        {
+          "name": "User Management (Admin)",
+          "item": [
+            {
+              "name": "List users (GET)",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": {
+                  "raw": "{{baseUrl}}/usermanagement/users?page=1&limit=20&role=user&status=active&isEmailVerified=true",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["usermanagement", "users"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" },
+                    { "key": "role", "value": "user" },
+                    { "key": "status", "value": "active" },
+                    { "key": "isEmailVerified", "value": "true" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "List users (POST body filters)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"page\": 1,\n  \"limit\": 25,\n  \"role\": [\"user\", \"staff\", \"admin\"],\n  \"status\": [\"active\", \"inactive\"],\n  \"isEmailVerified\": \"true\"\n}" },
+                "url": { "raw": "{{baseUrl}}/usermanagement/users/list", "host": ["{{baseUrl}}"], "path": ["usermanagement", "users", "list"] }
+              }
+            },
+            {
+              "name": "Add user",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"idToken\": \"{{newUserFirebaseIdToken}}\",\n  \"username\": \"New Staff User\",\n  \"mobile\": \"9876543210\",\n  \"role\": \"staff\",\n  \"status\": \"active\"\n}" },
+                "url": { "raw": "{{baseUrl}}/usermanagement/users", "host": ["{{baseUrl}}"], "path": ["usermanagement", "users"] }
+              }
+            },
+            {
+              "name": "Update user",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"username\": \"Updated User Name\",\n  \"role\": \"admin\",\n  \"status\": \"active\"\n}" },
+                "url": { "raw": "{{baseUrl}}/usermanagement/users/:id", "host": ["{{baseUrl}}"], "path": ["usermanagement", "users", ":id"] }
+              }
+            },
+            {
+              "name": "Set user status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"status\": \"inactive\"\n}" },
+                "url": { "raw": "{{baseUrl}}/usermanagement/users/:id/status", "host": ["{{baseUrl}}"], "path": ["usermanagement", "users", ":id", "status"] }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Public and User",
+      "item": [
+        {
+          "name": "Public",
+          "item": [
+            {
+              "name": "Health check",
+              "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] } }
+            },
+            {
+              "name": "Venue config",
+              "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/venue/config", "host": ["{{baseUrl}}"], "path": ["venue", "config"] } }
+            },
+            {
+              "name": "Coupons list (public)",
+              "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/coupons", "host": ["{{baseUrl}}"], "path": ["coupons"] } }
+            },
+            {
+              "name": "Feedback list (public)",
+              "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/feedback", "host": ["{{baseUrl}}"], "path": ["feedback"] } }
+            },
+            {
+              "name": "Videos list (public)",
+              "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/videos", "host": ["{{baseUrl}}"], "path": ["videos"] } }
+            }
+          ]
+        },
+        {
+          "name": "Bookings (User)",
+          "item": [
+            {
+              "name": "List bookings",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": {
+                  "raw": "{{baseUrl}}/bookings?customerId={{customerId}}&tab=past&page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["bookings"],
+                  "query": [
+                    { "key": "customerId", "value": "{{customerId}}" },
+                    { "key": "tab", "value": "past" },
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "10" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Feedback pending bookings",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/bookings/feedback-pending", "host": ["{{baseUrl}}"], "path": ["bookings", "feedback-pending"] }
+              }
+            },
+            {
+              "name": "Get booking config",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/bookings/config", "host": ["{{baseUrl}}"], "path": ["bookings", "config"] }
+              }
+            },
+            {
+              "name": "Get available slots",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": {
+                  "raw": "{{baseUrl}}/bookings/slots?date=2026-03-21&guestCount=2&section=Breakfast",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["bookings", "slots"],
+                  "query": [
+                    { "key": "date", "value": "2026-03-21" },
+                    { "key": "guestCount", "value": "2" },
+                    { "key": "section", "value": "Breakfast" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get booking by id",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": { "raw": "{{baseUrl}}/bookings/:id", "host": ["{{baseUrl}}"], "path": ["bookings", ":id"] }
+              }
+            },
+            {
+              "name": "Create booking",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"bookingDate\": \"2026-03-21\",\n  \"guestCount\": 2,\n  \"sectionName\": \"Breakfast\",\n  \"slot\": { \"name\": \"11-12\", \"startTime\": \"11:00\", \"endTime\": \"12:00\" },\n  \"customerName\": \"signal-admin\",\n  \"customerEmail\": \"signalflow16@gmail.com\",\n  \"customerPhone\": \"+9717767676\"\n}"
+                },
+                "url": { "raw": "{{baseUrl}}/bookings", "host": ["{{baseUrl}}"], "path": ["bookings"] }
+              }
+            },
+            {
+              "name": "Cancel booking",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{}" },
+                "url": { "raw": "{{baseUrl}}/bookings/:id/cancel", "host": ["{{baseUrl}}"], "path": ["bookings", ":id", "cancel"] }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Menu (Public)",
+          "item": [
+            { "name": "List categories", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/menu/categories", "host": ["{{baseUrl}}"], "path": ["menu", "categories"] } } },
+            { "name": "Get category by id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/menu/categories/id/{{categoryId}}", "host": ["{{baseUrl}}"], "path": ["menu", "categories", "id", "{{categoryId}}"] } } },
+            { "name": "Get category by slug", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/menu/categories/{{categorySlug}}", "host": ["{{baseUrl}}"], "path": ["menu", "categories", "{{categorySlug}}"] } } },
+            { "name": "Get product by slug", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/menu/product/{{productSlug}}", "host": ["{{baseUrl}}"], "path": ["menu", "product", "{{productSlug}}"] } } }
+          ]
+        },
+        {
+          "name": "Photos",
+          "item": [
+            {
+              "name": "List photos",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/photos?category=ambience",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["photos"],
+                  "query": [{ "key": "category", "value": "ambience" }]
+                }
+              }
+            },
+            {
+              "name": "Serve photo",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/photos/serve?object={{objectName}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["photos", "serve"],
+                  "query": [{ "key": "object", "value": "{{objectName}}" }]
+                }
+              }
+            },
+            {
+              "name": "Upload photo (admin/staff)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "body": { "mode": "formdata", "formdata": [{ "key": "image", "type": "file", "src": [] }, { "key": "category", "value": "ambience", "type": "text" }] },
+                "url": { "raw": "{{baseUrl}}/photos", "host": ["{{baseUrl}}"], "path": ["photos"] }
+              }
+            },
+            {
+              "name": "Delete photo (admin/staff)",
+              "request": {
+                "method": "DELETE",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": {
+                  "raw": "{{baseUrl}}/photos?object={{objectName}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["photos"],
+                  "query": [{ "key": "object", "value": "{{objectName}}" }]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Coupons",
+          "item": [
+            {
+              "name": "Redeem coupon",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"code\": \"WELCOME50\"\n}" },
+                "url": { "raw": "{{baseUrl}}/coupons/redeem", "host": ["{{baseUrl}}"], "path": ["coupons", "redeem"] }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Feedback (User)",
+          "item": [
+            {
+              "name": "Get feedback by booking id",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": {
+                  "raw": "{{baseUrl}}/feedback/by-booking?bookingId={{bookingId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["feedback", "by-booking"],
+                  "query": [{ "key": "bookingId", "value": "{{bookingId}}" }]
+                }
+              }
+            },
+            {
+              "name": "Submit feedback (updated: images/videos/canRedeem/skipped)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"overallRating\": 5,\n  \"foodRating\": 4,\n  \"serviceRating\": 5,\n  \"atmosphereRating\": 4,\n  \"description\": \"Great experience\",\n  \"images\": [\"/api/v1/photos/serve?object=table-booking-feedback/ambience/sample-image.jpg\"],\n  \"videos\": [\"/api/v1/photos/serve?object=table-booking-feedback/ambience/sample-video.mp4\"],\n  \"canRedeem\": true,\n  \"skipped\": false\n}"
+                },
+                "url": { "raw": "{{baseUrl}}/feedback", "host": ["{{baseUrl}}"], "path": ["feedback"] }
+              }
+            },
+            {
+              "name": "Upload feedback media (image/video, max 20MB for video)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "image", "type": "file", "src": [] }
+                  ]
+                },
+                "url": { "raw": "{{baseUrl}}/feedback/images", "host": ["{{baseUrl}}"], "path": ["feedback", "images"] }
+              }
+            },
+            {
+              "name": "Delete feedback media",
+              "request": {
+                "method": "DELETE",
+                "header": [{ "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" }],
+                "url": {
+                  "raw": "{{baseUrl}}/feedback/images?object={{objectName}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["feedback", "images"],
+                  "query": [
+                    { "key": "object", "value": "{{objectName}}" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Videos (Admin)",
+          "item": [
+            {
+              "name": "Create video (admin/staff)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{bearerToken}}", "type": "text" },
+                  { "key": "Content-Type", "value": "application/json", "type": "text" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"title\": \"Promo Video\",\n  \"url\": \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\",\n  \"isActive\": true\n}" },
+                "url": { "raw": "{{baseUrl}}/videos", "host": ["{{baseUrl}}"], "path": ["videos"] }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
