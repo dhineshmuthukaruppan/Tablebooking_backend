@@ -21,6 +21,7 @@ export const dbTables = {
   counters: "counters",
   coupons: "coupons",
   redeems: "redeems",
+  staff_permissions: "staff_permissions",
 } as const;
 
 export const connectionStrings = {
