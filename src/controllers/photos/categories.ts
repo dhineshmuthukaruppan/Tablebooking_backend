@@ -74,7 +74,7 @@ export async function createPhotoCategoryHandler(req: Request, res: Response): P
     }
 
     const _id = new ObjectId();
-    const payload: PhotoCategoryDoc = {
+    const payload: PhotoCategoryDoc & Record<string, unknown> = {
       _id,
       name: name.trim(),
       slug,
@@ -104,7 +104,7 @@ export async function updatePhotoCategoryHandler(req: Request, res: Response): P
   try {
     let id: ObjectId;
     try {
-      id = new ObjectId(req.params.id);
+      id = new ObjectId(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
     } catch {
       res.status(400).json({ message: "Invalid category id" });
       return;

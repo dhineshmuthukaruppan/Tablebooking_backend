@@ -387,7 +387,8 @@ export async function listUserImagesHandler(req: Request, res: Response): Promis
 
 export async function approveUserImageHandler(req: Request, res: Response): Promise<void> {
   try {
-    const id = new ObjectId(req.params.id);
+    const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = new ObjectId(rawId);
     const imageApprovals = req.body.imageApprovals as boolean[] | undefined;
     const isRejected = req.body.isRejected as boolean | undefined;
 
