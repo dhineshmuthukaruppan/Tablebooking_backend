@@ -22,6 +22,7 @@ export const dbTables = {
   counters: "counters",
   coupons: "coupons",
   redeems: "redeems",
+  staff_permissions: "staff_permissions",
   photo_categories: "photo_categories",
 } as const;
 

@@ -239,10 +239,20 @@ export async function updateUserHandler(req: Request, res: Response): Promise<vo
       connectionString,
       collection: "users",
       query: { _id: new ObjectId(id) },
-    }) as { firebaseUid?: string; displayName?: string; email?: string; phoneNumber?: string } | null;
+    }) as { firebaseUid?: string; displayName?: string; email?: string; phoneNumber?: string; role?: string; isSystemAdmin?: boolean } | null;
 
     if (!existing) {
       res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (existing.isSystemAdmin) {
+      res.status(403).json({ message: "The system admin account cannot be modified" });
+      return;
+    }
+
+    if (existing.role === "admin" && body.role && body.role !== "admin") {
+      res.status(403).json({ message: "Admin role cannot be changed" });
       return;
     }
     console.log("existing", existing);
@@ -299,6 +309,29 @@ export async function setUserStatusHandler(req: Request, res: Response): Promise
     const status = body.status === "active" ? "active" : "inactive";
 
     const connectionString = db.constants.connectionStrings.tableBooking;
+
+    const targetUser = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "users",
+      query: { _id: new ObjectId(id) },
+    }) as { role?: string; isSystemAdmin?: boolean } | null;
+
+    if (!targetUser) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (targetUser.isSystemAdmin) {
+      res.status(403).json({ message: "The system admin account cannot be modified" });
+      return;
+    }
+
+    if (targetUser.role === "admin" && status === "inactive") {
+      res.status(403).json({ message: "Admin accounts cannot be deactivated" });
+      return;
+    }
+
     const result = await db.update.updateOne({
       req,
       connectionString,
