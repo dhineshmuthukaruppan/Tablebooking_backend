@@ -10,13 +10,13 @@ router.get("/categories", categoriesController.listPhotoCategoriesHandler);
 router.post(
   "/categories",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   categoriesController.createPhotoCategoryHandler
 );
 router.patch(
   "/categories/:id",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   categoriesController.updatePhotoCategoryHandler
 );
 
@@ -52,14 +52,14 @@ router.post(
 router.get(
   "/admin",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   photosController.listUserImagesHandler
 );
 
 router.patch(
   "/admin/:id",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   photosController.approveUserImageHandler
 );
 

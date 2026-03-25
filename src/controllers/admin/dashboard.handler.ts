@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { dbTables, connectionStrings } from "../../databaseUtilities/constants/databaseConstants";
+import e from "cors";
 
 function getDb(req: Request): import("mongodb").Db {
   const db = req.app.locals[connectionStrings.tableBooking + "DB"];
@@ -35,7 +36,13 @@ export interface DashboardStats {
   /** Coupons: total reserved across all coupons */
   totalCouponsReserved: number;
   /** Per-coupon breakdown */
-  couponBreakdown: { code: string; description: string; totalUsed: number; totalReserved: number }[];
+  couponBreakdown: {
+    code: string;
+    description: string;
+    totalUsed: number;
+    totalReserved: number;
+    expiryDate: Date | null;
+  }[];
   /** Busy hours: [{ slot: "HH:mm", count: number }] sorted desc */
   busyHours: { slot: string; count: number }[];
 }
@@ -129,7 +136,7 @@ export async function dashboardHandler(req: Request, res: Response): Promise<voi
       couponsCol
         .find(
           { deletedAt: { $eq: null } },
-          { projection: { code: 1, description: 1, totalUsed: 1, totalReserved: 1 ,expireDate: 1} }
+          { projection: { code: 1, description: 1, totalUsed: 1, totalReserved: 1, expiryDate: 1 } }
         )
         .toArray(),
     ]);
@@ -148,11 +155,19 @@ export async function dashboardHandler(req: Request, res: Response): Promise<voi
     const denominator = onlineCustomersCount + onlineConfirmedCount;
     const showOffRate = denominator > 0 ? Math.round((onlineCustomersCount / denominator) * 1000) / 10 : 0;
 
-    const couponBreakdown = (couponDocs as { code?: string; description?: string; totalUsed?: number; totalReserved?: number }[]).map((c) => ({
+    console.log("coupons docs:", couponDocs);
+    const couponBreakdown = (couponDocs as {
+      code?: string;
+      description?: string;
+      totalUsed?: number;
+      totalReserved?: number;
+      expiryDate?: Date | null;
+    }[]).map((c) => ({
       code: c.code ?? "",
       description: c.description ?? "",
       totalUsed: c.totalUsed ?? 0,
       totalReserved: c.totalReserved ?? 0,
+      expiryDate: c.expiryDate ? new Date(c.expiryDate) : null,
     }));
 
     const totalCouponsRedeemed = couponBreakdown.reduce((s, c) => s + c.totalUsed, 0);
