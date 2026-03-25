@@ -274,7 +274,12 @@ export async function userUploadPhotoHandler(req: Request, res: Response): Promi
     });
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error("[photos] userUploadPhotoHandler error", error);
+    console.error("[photos] userUploadPhotoHandler error", {
+      message: error instanceof Error ? error.message : String(error),
+      userId: (req as any).user?.id?.toString?.() ?? null,
+      categoryId: typeof req.body?.categoryId === "string" ? req.body.categoryId : null,
+      fileNames: Array.isArray(req.body?.fileNames) ? req.body.fileNames : null,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 }
