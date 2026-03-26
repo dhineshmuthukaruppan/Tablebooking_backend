@@ -178,6 +178,42 @@ export async function completePhotoUploadHandler(req: Request, res: Response): P
   }
 }
 
+export async function cleanupUserPhotoUploadHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const objectNames: unknown[] = Array.isArray(req.body?.objectNames) ? req.body.objectNames : [];
+    if (objectNames.length === 0) {
+      res.status(400).json({ message: "objectNames required" });
+      return;
+    }
+
+    const userPrefix = `table-booking/user-uploads/${user.id.toString()}/`;
+    const ownedObjectNames = objectNames.filter(
+      (objectName: unknown): objectName is string =>
+        typeof objectName === "string" && objectName.startsWith(userPrefix)
+    );
+
+    if (ownedObjectNames.length === 0) {
+      res.status(400).json({ message: "No valid user-upload objects provided" });
+      return;
+    }
+
+    await Promise.all(ownedObjectNames.map((objectName: string) => deleteFile(objectName)));
+
+    res.status(200).json({ message: "Uploaded images cleaned up" });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] cleanupUserPhotoUploadHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+
 /** Soft-delete a photo. */
 export async function deletePhotoHandler(req: Request, res: Response): Promise<void> {
   try {

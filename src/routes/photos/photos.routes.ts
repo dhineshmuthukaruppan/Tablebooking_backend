@@ -22,6 +22,12 @@ router.patch(
 
 router.get("/", photosController.listPhotosHandler);
 router.get("/serve", photosController.servePhotoHandler);
+router.delete(
+  "/",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  photosController.deletePhotoHandler
+);
 
 router.post(
   "/",
@@ -49,6 +55,12 @@ router.post(
   photosController.completeUserPhotoUploadHandler
 );
 
+router.post(
+  "/user-upload/cleanup",
+  auth.authentication.authenticate,
+  photosController.cleanupUserPhotoUploadHandler
+);
+
 router.get(
   "/admin",
   auth.authentication.authenticate,
@@ -64,4 +76,3 @@ router.patch(
 );
 
 export { router as photosRoutes };
-
