@@ -39,23 +39,50 @@ function slotDurationToNumber(slotDuration: string | number): number {
   return Math.max(1, parseInt(String(slotDuration ?? "60"), 10) || 60);
 }
 
+function getPagination(query: Request["query"]): { page: number; limit: number; skip: number } {
+  const pageRaw = typeof query.page === "string" ? Number(query.page) : 1;
+  const limitRaw = typeof query.limit === "string" ? Number(query.limit) : 20;
+  const page = Math.max(1, Number.isFinite(pageRaw) ? pageRaw : 1);
+  const limit = Math.min(500, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 20));
+  return { page, limit, skip: (page - 1) * limit };
+}
+
 export async function getMealTimeListHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
+    const { page, limit, skip } = getPagination(req.query);
+    const query = {};
 
-    const list = (await db.read.find({
-      req,
-      connectionString,
-      collection: "meal_time_master",
-      query: {},
-      sort: { createdOn: -1 },
-    })) as unknown as Array<Record<string, unknown>>;
+    const [list, total] = await Promise.all([
+      db.read.find({
+        req,
+        connectionString,
+        collection: "meal_time_master",
+        query,
+        sort: { createdOn: -1 },
+        skip,
+        limit,
+      }),
+      db.read.count({
+        req,
+        connectionString,
+        collection: "meal_time_master",
+        query,
+      }),
+    ]);
 
-    list.forEach(sortSlotConfigsByEffectiveFromDesc);
+    const items = (list ?? []) as Array<Record<string, unknown>>;
+
+    items.forEach(sortSlotConfigsByEffectiveFromDesc);
 
     res.status(200).json({
       message: "Meal time sections",
-      data: list,
+      data: {
+        items,
+        total: total ?? 0,
+        page,
+        limit,
+      },
     });
   } catch {
     res.status(500).json({ message: "Internal server error" });

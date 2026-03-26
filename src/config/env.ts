@@ -19,7 +19,7 @@ const envSchema = z.object({
       "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001"
     ),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
-  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(5000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(15000),
   FRONTEND_URL: z.string().optional().default(""),
   MAIL_FROM: z.string().optional().default(""),
   TWILIO_ACCOUNT_SID: z.string().default(""),
