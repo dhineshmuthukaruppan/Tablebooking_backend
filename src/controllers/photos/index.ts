@@ -122,7 +122,7 @@ export async function completePhotoUploadHandler(req: Request, res: Response): P
   }
 }
 
-/** Soft-delete a photo: mark as deleted in DB and delete from GCS. */
+/** Delete a photo: remove from DB and delete from GCS. */
 export async function deletePhotoHandler(req: Request, res: Response): Promise<void> {
   try {
     const objectName = req.query.object as string | undefined;
@@ -131,12 +131,11 @@ export async function deletePhotoHandler(req: Request, res: Response): Promise<v
       return;
     }
 
-    await db.update.updateOne({
+    await db.deleteOp.deleteOne({
       req,
       connectionString: TABLE_BOOKING_CONN,
       collection: "venue_photos",
       query: { objectName },
-      update: { $set: { isDeleted: true, deletedAt: new Date() } },
     });
 
     await deleteFile(objectName);
