@@ -239,6 +239,39 @@ export async function deletePhotoHandler(req: Request, res: Response): Promise<v
   }
 }
 
+/** Delete multiple photos at once. */
+export async function deleteManyPhotosHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const rawObjectNames = Array.isArray(req.body?.objectNames) ? req.body.objectNames : [];
+    const objectNames = rawObjectNames.filter(
+      (item: unknown): item is string => typeof item === "string" && item.trim().length > 0
+    );
+
+    if (objectNames.length === 0) {
+      res.status(400).json({ message: "objectNames array is required" });
+      return;
+    }
+
+    await db.deleteOp.deleteMany({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "venue_photos",
+      query: { objectName: { $in: objectNames } },
+    });
+
+    await Promise.all(objectNames.map((objectName: string) => deleteFile(objectName)));
+
+    res.status(200).json({
+      message: "Selected photos deleted successfully",
+      deletedObjectNames: objectNames,
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] deleteManyPhotosHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 /** Serve a photo from GCS by object name. */
 export async function servePhotoHandler(req: Request, res: Response): Promise<void> {
   try {

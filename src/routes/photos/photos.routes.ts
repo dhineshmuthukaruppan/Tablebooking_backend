@@ -19,6 +19,12 @@ router.patch(
   auth.privilege.requireRoles("admin", "staff"),
   categoriesController.updatePhotoCategoryHandler
 );
+router.delete(
+  "/categories/:id",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  categoriesController.deletePhotoCategoryHandler
+);
 
 router.get("/", photosController.listPhotosHandler);
 router.get("/serve", photosController.servePhotoHandler);
@@ -27,6 +33,12 @@ router.delete(
   auth.authentication.authenticate,
   auth.privilege.requireRoles("admin", "staff"),
   photosController.deletePhotoHandler
+);
+router.post(
+  "/delete-many",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  photosController.deleteManyPhotosHandler
 );
 
 router.post(

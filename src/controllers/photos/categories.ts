@@ -160,3 +160,55 @@ export async function updatePhotoCategoryHandler(req: Request, res: Response): P
     res.status(500).json({ message: "Internal server error" });
   }
 }
+
+/** DELETE /photos/categories/:id - admin only. */
+export async function deletePhotoCategoryHandler(req: Request, res: Response): Promise<void> {
+  try {
+    let id: ObjectId;
+    try {
+      id = new ObjectId(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    } catch {
+      res.status(400).json({ message: "Invalid category id" });
+      return;
+    }
+
+    const existingCategory = await db.read.findOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: COLLECTION,
+      query: { _id: id },
+    });
+
+    if (!existingCategory) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    const photoCount = await db.read.count({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "venue_photos",
+      query: { categoryId: id, isDeleted: { $ne: true } },
+    });
+
+    if (photoCount > 0) {
+      res.status(409).json({
+        message: "Images are available please delete all the images to delete this category",
+      });
+      return;
+    }
+
+    await db.deleteOp.deleteOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: COLLECTION,
+      query: { _id: id },
+    });
+
+    res.status(200).json({ message: "Deleted successfully" });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photo_categories] deletePhotoCategoryHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}

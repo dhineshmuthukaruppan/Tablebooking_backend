@@ -21,7 +21,7 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(8000),
   RATE_LIMIT_TABLE_ALLOCATIONS_GET_MAX_REQUESTS: z.coerce.number().default(3000),
-  RATE_LIMIT_AUTH_MAX_REQUESTS: z.coerce.number().default(30),
+  RATE_LIMIT_AUTH_MAX_REQUESTS: z.coerce.number().default(50),
   FRONTEND_URL: z.string().optional().default(""),
   MAIL_FROM: z.string().optional().default(""),
   TWILIO_ACCOUNT_SID: z.string().default(""),
