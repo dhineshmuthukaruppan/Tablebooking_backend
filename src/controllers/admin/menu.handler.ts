@@ -28,17 +28,37 @@ function getBodyBool(req: Request, key: string): boolean | undefined {
   return undefined;
 }
 
+function getPagination(query: Request["query"]): { page: number; limit: number; skip: number } {
+  const pageRaw = typeof query.page === "string" ? Number(query.page) : 1;
+  const limitRaw = typeof query.limit === "string" ? Number(query.limit) : 20;
+  const page = Math.max(1, Number.isFinite(pageRaw) ? pageRaw : 1);
+  const limit = Math.min(500, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 20));
+  return { page, limit, skip: (page - 1) * limit };
+}
+
 /** GET /admin/menu/categories */
 export async function getAdminCategoriesHandler(req: Request, res: Response): Promise<void> {
   try {
-    const list = await db.read.find({
-      req,
-      connectionString: CONN,
-      collection: "menu_categories",
-      query: {},
-      sort: { order: 1 },
-    });
-    res.status(200).json({ data: list });
+    const { page, limit, skip } = getPagination(req.query);
+    const query = {};
+    const [items, total] = await Promise.all([
+      db.read.find({
+        req,
+        connectionString: CONN,
+        collection: "menu_categories",
+        query,
+        sort: { order: 1 },
+        skip,
+        limit,
+      }),
+      db.read.count({
+        req,
+        connectionString: CONN,
+        collection: "menu_categories",
+        query,
+      }),
+    ]);
+    res.status(200).json({ data: { items: items ?? [], total: total ?? 0, page, limit } });
   } catch (err) {
     console.error("[admin/menu] getAdminCategoriesHandler error", err);
     res.status(500).json({ message: "Internal server error" });
@@ -169,19 +189,30 @@ export async function patchAdminCategoryHandler(req: Request, res: Response): Pr
 export async function getAdminProductsHandler(req: Request, res: Response): Promise<void> {
   try {
     const categoryId = req.query.categoryId as string | undefined;
+    const { page, limit, skip } = getPagination(req.query);
     const query: Record<string, unknown> = {};
     if (categoryId && ObjectId.isValid(categoryId)) {
       query.categoryId = new ObjectId(categoryId);
     }
 
-    const list = await db.read.find({
-      req,
-      connectionString: CONN,
-      collection: "menu_products",
-      query,
-      sort: { name: 1 },
-    });
-    res.status(200).json({ data: list });
+    const [items, total] = await Promise.all([
+      db.read.find({
+        req,
+        connectionString: CONN,
+        collection: "menu_products",
+        query,
+        sort: { name: 1 },
+        skip,
+        limit,
+      }),
+      db.read.count({
+        req,
+        connectionString: CONN,
+        collection: "menu_products",
+        query,
+      }),
+    ]);
+    res.status(200).json({ data: { items: items ?? [], total: total ?? 0, page, limit } });
   } catch (err) {
     console.error("[admin/menu] getAdminProductsHandler error", err);
     res.status(500).json({ message: "Internal server error" });

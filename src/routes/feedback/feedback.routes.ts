@@ -2,15 +2,10 @@
  * Feedback routes – list (public), submit (authenticated).
  */
 import { Router } from "express";
-import multer from "multer";
 import { auth } from "../../services";
 import * as feedbackController from "../../controllers/feedback";
 
 const router = Router();
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
-});
 
 // Public list of feedback already filtered by isPublicVisible === true
 router.get("/", feedbackController.listFeedbackHandler);
@@ -21,7 +16,6 @@ router.post("/", auth.authentication.authenticate, feedbackController.submitFeed
 router.post(
   "/images",
   auth.authentication.authenticate,
-  upload.single("image"),
   feedbackController.uploadFeedbackImageHandler
 );
 

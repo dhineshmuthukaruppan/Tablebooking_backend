@@ -163,11 +163,21 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/master/meal-time",
+                  "raw": "{{baseUrl}}/admin/master/meal-time?page=1&limit=20",
                   "host": ["{{baseUrl}}"],
-                  "path": ["admin", "master", "meal-time"]
+                  "path": ["admin", "master", "meal-time"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
                 },
-                "description": "GET /admin/master/meal-time — List meal-time sections (e.g. Breakfast, Lunch, Dinner)."
+                "description": "GET /admin/master/meal-time — List meal-time sections with server-side pagination. Query params: page, limit. Response data shape: { items, total, page, limit }."
               }
             },
             {
@@ -517,6 +527,279 @@
                   "path": ["admin", "menu", "products", ":id"]
                 },
                 "description": "PATCH /admin/menu/products/:id — Update a menu product. Replace :id with product _id."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Videos",
+          "item": [
+            {
+              "name": "Video categories – list (admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/video-categories?page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "video-categories"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" }
+                  ]
+                },
+                "description": "GET /admin/video-categories — List video categories with server-side pagination. Response data shape: { items, total, page, limit }."
+              }
+            },
+            {
+              "name": "Video categories – create",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Dining Experience\",\n  \"description\": \"Videos grouped for the dining section\",\n  \"isActive\": true\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/video-categories",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "video-categories"]
+                },
+                "description": "POST /admin/video-categories — Create an admin video category."
+              }
+            },
+            {
+              "name": "Video categories – reorder",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"items\": [\n    { \"id\": \"{{videoCategoryId1}}\" },\n    { \"id\": \"{{videoCategoryId2}}\" }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/video-categories/reorder",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "video-categories", "reorder"]
+                },
+                "description": "PATCH /admin/video-categories/reorder — Reorder video categories by id sequence."
+              }
+            },
+            {
+              "name": "Video categories – update",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Updated Dining Experience\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/video-categories/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "video-categories", ":id"]
+                },
+                "description": "PATCH /admin/video-categories/:id — Update a video category."
+              }
+            },
+            {
+              "name": "Video categories – delete",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/video-categories/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "video-categories", ":id"]
+                },
+                "description": "DELETE /admin/video-categories/:id — Delete a video category."
+              }
+            },
+            {
+              "name": "Videos – preview YouTube URL",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/videos/preview?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["videos", "preview"],
+                  "query": [
+                    { "key": "url", "value": "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
+                  ]
+                },
+                "description": "GET /videos/preview — Resolve YouTube title, youtubeId, and thumbnail for admin video creation/editing."
+              }
+            },
+            {
+              "name": "Videos – list (admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/videos?page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "videos"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" },
+                    { "key": "categoryId", "value": "{{videoCategoryId}}", "disabled": true }
+                  ]
+                },
+                "description": "GET /admin/videos — List admin videos with server-side pagination. Optional filters: categoryId, featured, published."
+              }
+            },
+            {
+              "name": "Videos – create",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\",\n  \"categoryId\": \"{{videoCategoryId}}\",\n  \"description\": \"Signature dining walkthrough\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/videos",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "videos"]
+                },
+                "description": "POST /admin/videos — Create a new admin video record from a YouTube URL."
+              }
+            },
+            {
+              "name": "Videos – reorder",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"items\": [\n    { \"id\": \"{{videoId1}}\" },\n    { \"id\": \"{{videoId2}}\" }\n  ],\n  \"categoryId\": \"{{videoCategoryId}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/videos/reorder",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "videos", "reorder"]
+                },
+                "description": "PATCH /admin/videos/reorder — Reorder videos by id sequence."
+              }
+            },
+            {
+              "name": "Videos – update",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\",\n  \"categoryId\": \"{{videoCategoryId}}\",\n  \"description\": \"Updated video description\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/videos/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "videos", ":id"]
+                },
+                "description": "PATCH /admin/videos/:id — Update a video record."
+              }
+            },
+            {
+              "name": "Videos – delete",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{bearerToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/videos/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "videos", ":id"]
+                },
+                "description": "DELETE /admin/videos/:id — Delete a video record."
               }
             }
           ]

@@ -19,6 +19,7 @@ export const ALL_STAFF_ROUTES = [
   "/admin/photo-upload",
   "/admin/bookings",
   "/admin/approval-feedback",
+  "/admin/approval-images",
   "/admin/coupons",
   "/admin/youtube-video",
   "/admin/menu/categories",

@@ -1,24 +1,55 @@
 import type { Request, Response } from "express";
 import db from "../../databaseUtilities";
+import { ObjectId } from "mongodb";
 import { generateSignedUploadUrl, getFileBuffer, deleteFile } from "../../config/gcs";
 
-type PhotoCategory = "ambience" | "food";
-
 const TABLE_BOOKING_CONN = db.constants.connectionStrings.tableBooking;
-
 const SERVE_PATH = "/api/v1/photos/serve";
+
+/** Resolves category slug + ObjectId from a categoryId string. Returns null if not found/invalid. */
+async function resolveCategoryById(
+  req: Request,
+  categoryId: string
+): Promise<{ slug: string; _id: ObjectId } | null> {
+  try {
+    const doc = await db.read.findOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "photo_categories",
+      query: { _id: new ObjectId(categoryId) },
+    });
+    if (!doc) return null;
+    return { slug: doc.slug as string, _id: new ObjectId(categoryId) };
+  } catch {
+    return null;
+  }
+}
 
 export async function listPhotosHandler(req: Request, res: Response): Promise<void> {
   try {
-    const category = (req.query.category as PhotoCategory | undefined) ?? "ambience";
+    const categoryIdParam = req.query.categoryId as string | undefined;
+    const categorySlug = req.query.category as string | undefined;
+
+    // Build query: prefer categoryId lookup (stable across renames), fall back to slug
+    let query: Record<string, unknown> = { isDeleted: { $ne: true } };
+    if (categoryIdParam) {
+      try {
+        query.categoryId = new ObjectId(categoryIdParam);
+      } catch {
+        res.status(400).json({ message: "Invalid categoryId" });
+        return;
+      }
+    } else if (categorySlug) {
+      query.category = categorySlug;
+    }
 
     const docs = (await db.read.find({
       req,
       connectionString: TABLE_BOOKING_CONN,
       collection: "venue_photos",
-      query: { category, isDeleted: { $ne: true } },
+      query,
       sort: { createdAt: -1 },
-    })) as unknown as { url: string; objectName?: string; category: PhotoCategory }[];
+    })) as unknown as { url: string; objectName?: string; category: string }[];
 
     res.status(200).json({
       data: docs.map((doc) => {
@@ -44,11 +75,7 @@ export async function listPhotosHandler(req: Request, res: Response): Promise<vo
 
 export async function uploadPhotoHandler(req: Request, res: Response): Promise<void> {
   try {
-    const category = (req.body.category as PhotoCategory | undefined) ?? "ambience";
     const requestedFolder = typeof req.body.folder === "string" ? req.body.folder.trim() : undefined;
-
-    // Menu signed uploads use "folder" = "categories" | "products".
-    // Regular landing-page photo signed uploads use "category" = "ambience" | "food".
     const isMenuFolder = requestedFolder === "categories" || requestedFolder === "products";
     const fileName = req.body.fileName;
     const contentType = typeof req.body.contentType === "string" ? req.body.contentType : undefined;
@@ -61,21 +88,37 @@ export async function uploadPhotoHandler(req: Request, res: Response): Promise<v
     const safeName = fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const timestamp = Date.now();
 
+    let categorySlug = "general";
+    let categoryObjId: ObjectId | null = null;
+
+    if (!isMenuFolder) {
+      const categoryId = req.body.categoryId as string | undefined;
+      const categoryFallback = req.body.category as string | undefined;
+      if (categoryId) {
+        const resolved = await resolveCategoryById(req, categoryId);
+        if (!resolved) {
+          res.status(400).json({ message: "Invalid categoryId" });
+          return;
+        }
+        categorySlug = resolved.slug;
+        categoryObjId = resolved._id;
+      } else if (categoryFallback) {
+        categorySlug = categoryFallback; // backward compat
+      }
+    }
+
     const objectName = isMenuFolder
       ? `table-booking/menu/${requestedFolder}/${timestamp}-${safeName}`
-      : `table-booking/${category}/${timestamp}-${safeName}`;
+      : `table-booking/${categorySlug}/${timestamp}-${safeName}`;
 
-    const { signedUrl } = await generateSignedUploadUrl({
-      objectName,
-      contentType,
-    });
+    const { signedUrl } = await generateSignedUploadUrl({ objectName, contentType });
 
     const serveUrl = `${SERVE_PATH}?object=${encodeURIComponent(objectName)}`;
     res.status(201).json({
       message: "Photo signed-url initialized",
       signedUrl,
       objectName,
-      data: { url: serveUrl, category },
+      data: { url: serveUrl, category: categorySlug, categoryId: categoryObjId ?? undefined },
     });
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -84,36 +127,49 @@ export async function uploadPhotoHandler(req: Request, res: Response): Promise<v
   }
 }
 
-/**
- * POST /photos/complete
- * Create the DB row after the client successfully uploads to the signed URL.
- */
+/** POST /photos/complete */
 export async function completePhotoUploadHandler(req: Request, res: Response): Promise<void> {
   try {
-    const category = (req.body.category as PhotoCategory | undefined) ?? "ambience";
     const objectName = typeof req.body.objectName === "string" ? req.body.objectName : "";
-
     if (!objectName) {
       res.status(400).json({ message: "objectName is required" });
       return;
     }
 
+    let categorySlug = "general";
+    let categoryObjId: ObjectId | undefined;
+
+    const categoryId = req.body.categoryId as string | undefined;
+    const categoryFallback = req.body.category as string | undefined;
+    if (categoryId) {
+      const resolved = await resolveCategoryById(req, categoryId);
+      if (resolved) {
+        categorySlug = resolved.slug;
+        categoryObjId = resolved._id;
+      }
+    } else if (categoryFallback) {
+      categorySlug = categoryFallback;
+    }
+
+    const payload: Record<string, unknown> = {
+      url: `${SERVE_PATH}?object=${encodeURIComponent(objectName)}`,
+      objectName,
+      category: categorySlug,
+      createdAt: new Date(),
+    };
+    if (categoryObjId) payload.categoryId = categoryObjId;
+
     await db.create.insertOne({
       req,
       connectionString: TABLE_BOOKING_CONN,
       collection: "venue_photos",
-      payload: {
-        url: `${SERVE_PATH}?object=${encodeURIComponent(objectName)}`,
-        objectName,
-        category,
-        createdAt: new Date(),
-      },
+      payload,
     });
 
     const serveUrl = `${SERVE_PATH}?object=${encodeURIComponent(objectName)}`;
     res.status(201).json({
       message: "Photo upload completed",
-      data: { url: serveUrl, category },
+      data: { url: serveUrl, category: categorySlug, categoryId: categoryObjId ?? undefined },
     });
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -122,7 +178,43 @@ export async function completePhotoUploadHandler(req: Request, res: Response): P
   }
 }
 
-/** Delete a photo: remove from DB and delete from GCS. */
+export async function cleanupUserPhotoUploadHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const objectNames: unknown[] = Array.isArray(req.body?.objectNames) ? req.body.objectNames : [];
+    if (objectNames.length === 0) {
+      res.status(400).json({ message: "objectNames required" });
+      return;
+    }
+
+    const userPrefix = `table-booking/user-uploads/${user.id.toString()}/`;
+    const ownedObjectNames = objectNames.filter(
+      (objectName: unknown): objectName is string =>
+        typeof objectName === "string" && objectName.startsWith(userPrefix)
+    );
+
+    if (ownedObjectNames.length === 0) {
+      res.status(400).json({ message: "No valid user-upload objects provided" });
+      return;
+    }
+
+    await Promise.all(ownedObjectNames.map((objectName: string) => deleteFile(objectName)));
+
+    res.status(200).json({ message: "Uploaded images cleaned up" });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] cleanupUserPhotoUploadHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+
+/** Soft-delete a photo. */
 export async function deletePhotoHandler(req: Request, res: Response): Promise<void> {
   try {
     const objectName = req.query.object as string | undefined;
@@ -139,7 +231,6 @@ export async function deletePhotoHandler(req: Request, res: Response): Promise<v
     });
 
     await deleteFile(objectName);
-
     res.status(200).json({ message: "Photo deleted" });
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -148,7 +239,7 @@ export async function deletePhotoHandler(req: Request, res: Response): Promise<v
   }
 }
 
-/** Serve a photo from GCS by object name (avoids 403 when bucket is private). */
+/** Serve a photo from GCS by object name. */
 export async function servePhotoHandler(req: Request, res: Response): Promise<void> {
   try {
     const objectName = req.query.object as string | undefined;
@@ -171,3 +262,280 @@ export async function servePhotoHandler(req: Request, res: Response): Promise<vo
   }
 }
 
+export async function userUploadPhotoHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const categoryId = req.body.categoryId as string | undefined;
+    const fileNames = req.body.fileNames as string[];
+    const contentTypes = req.body.contentTypes as string[];
+
+    if (!categoryId) {
+      res.status(400).json({ message: "categoryId is required" });
+      return;
+    }
+
+    const resolved = await resolveCategoryById(req, categoryId);
+    if (!resolved) {
+      res.status(400).json({ message: "Invalid category" });
+      return;
+    }
+
+    if (!Array.isArray(fileNames) || fileNames.length === 0) {
+      res.status(400).json({ message: "fileNames required" });
+      return;
+    }
+
+    const uploads = [];
+    for (let i = 0; i < fileNames.length; i++) {
+      const fileName = fileNames[i];
+      const contentType = contentTypes?.[i];
+      const safeName = fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const timestamp = Date.now();
+      const objectName = `table-booking/user-uploads/${user.id}/${timestamp}-${safeName}`;
+      const { signedUrl } = await generateSignedUploadUrl({ objectName, contentType });
+      uploads.push({ signedUrl, objectName, url: `${SERVE_PATH}?object=${encodeURIComponent(objectName)}` });
+    }
+
+    res.status(201).json({
+      message: "Signed URLs generated",
+      uploads,
+      category: resolved.slug,
+      categoryId: resolved._id,
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] userUploadPhotoHandler error", {
+      message: error instanceof Error ? error.message : String(error),
+      userId: (req as any).user?.id?.toString?.() ?? null,
+      categoryId: typeof req.body?.categoryId === "string" ? req.body.categoryId : null,
+      fileNames: Array.isArray(req.body?.fileNames) ? req.body.fileNames : null,
+    });
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function completeUserPhotoUploadHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const categoryId = req.body.categoryId as string | undefined;
+    const objectNames = req.body.objectNames as string[];
+
+    if (!categoryId || !Array.isArray(objectNames) || objectNames.length === 0) {
+      res.status(400).json({ message: "Invalid data" });
+      return;
+    }
+
+    const resolved = await resolveCategoryById(req, categoryId);
+    if (!resolved) {
+      res.status(400).json({ message: "Invalid category" });
+      return;
+    }
+
+    const images = objectNames.map((obj) => ({
+      url: `${SERVE_PATH}?object=${encodeURIComponent(obj)}`,
+      objectName: obj,
+    }));
+
+    await db.create.insertOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      payload: {
+        userId: user.id,
+        userName: user.displayName || "",
+        userRole: user.role || "user",
+        category: resolved.slug,
+        categoryId: resolved._id,
+        images,
+        isApproved: false,
+        createdAt: new Date(),
+      },
+    });
+
+    res.status(201).json({ message: "Upload completed" });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] completeUserPhotoUploadHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function listUserImagesHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const status = req.query.status as "approved" | "not_approved" | "rejected";
+    const userRole = req.query.userRole as "staff" | "user" | "both" | undefined;
+    const category = req.query.category as string | undefined;
+    const dateFrom = req.query.dateFrom as string | undefined;
+    const dateTo = req.query.dateTo as string | undefined;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    const query: Record<string, unknown> = {};
+    if (status === "approved") {
+      query.isApproved = true;
+    } else if (status === "rejected") {
+      query.isRejected = true;
+    } else {
+      // not_approved: exclude both approved and rejected
+      query.isApproved = false;
+      query.$or = [{ isRejected: false }, { isRejected: { $exists: false } }];
+    }
+    if (userRole === "staff") query.userRole = "staff";
+    else if (userRole === "user") query.userRole = "user";
+    if (category && category !== "all") query.category = category;
+    if (dateFrom || dateTo) {
+      const dateQuery: Record<string, Date> = {};
+      if (dateFrom) dateQuery.$gte = new Date(dateFrom);
+      if (dateTo) dateQuery.$lte = new Date(dateTo);
+      query.createdAt = dateQuery;
+    }
+
+    const skip = (page - 1) * limit;
+    const docs = await db.read.find({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      query,
+      sort: { createdAt: -1 },
+      skip,
+      limit,
+    });
+    const total = await db.read.count({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      query,
+    });
+
+    res.status(200).json({ data: docs, total, page, limit });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] listUserImagesHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function approveUserImageHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = new ObjectId(rawId);
+    const imageApprovals = req.body.imageApprovals as boolean[] | undefined;
+    const isRejected = req.body.isRejected as boolean | undefined;
+
+    // Allow isRejected-only updates (no imageApprovals required)
+    if (typeof isRejected === "boolean" && !Array.isArray(imageApprovals)) {
+      await db.update.updateOne({
+        req,
+        connectionString: TABLE_BOOKING_CONN,
+        collection: "images",
+        query: { _id: id },
+        update: {
+          $set: {
+            isRejected,
+            isApproved: false,
+            updatedAt: new Date(),
+          },
+        },
+      });
+      res.status(200).json({ message: "Image rejection updated", data: { isRejected, isApproved: false } });
+      return;
+    }
+
+    if (!Array.isArray(imageApprovals) || imageApprovals.length === 0) {
+      res.status(400).json({ message: "imageApprovals array required" });
+      return;
+    }
+
+    const doc = await db.read.findOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      query: { _id: id },
+    });
+
+    if (!doc) {
+      res.status(404).json({ message: "Not found" });
+      return;
+    }
+
+    const images = doc.images ?? [];
+    if (imageApprovals.length !== images.length) {
+      res.status(400).json({ message: "imageApprovals length must match images length" });
+      return;
+    }
+
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      const isApproved = imageApprovals[i];
+
+      if (isApproved) {
+        const exists = await db.read.findOne({
+          req,
+          connectionString: TABLE_BOOKING_CONN,
+          collection: "venue_photos",
+          query: { objectName: img.objectName },
+        });
+
+        if (!exists) {
+          const venuePhotoPayload: Record<string, unknown> = {
+            url: img.url,
+            objectName: img.objectName,
+            category: doc.category,
+            createdAt: new Date(),
+          };
+          if (doc.categoryId) venuePhotoPayload.categoryId = doc.categoryId;
+
+          await db.create.insertOne({
+            req,
+            connectionString: TABLE_BOOKING_CONN,
+            collection: "venue_photos",
+            payload: venuePhotoPayload,
+          });
+        }
+      } else {
+        await db.update.updateOne({
+          req,
+          connectionString: TABLE_BOOKING_CONN,
+          collection: "venue_photos",
+          query: { objectName: img.objectName },
+          update: { $set: { isDeleted: true, deletedAt: new Date() } },
+        });
+      }
+    }
+
+    const hasApprovedImages = imageApprovals.some((a) => a === true);
+
+    await db.update.updateOne({
+      req,
+      connectionString: TABLE_BOOKING_CONN,
+      collection: "images",
+      query: { _id: id },
+      update: {
+        $set: {
+          imageApprovals,
+          isApproved: hasApprovedImages,
+          updatedAt: new Date(),
+        },
+      },
+    });
+
+    res.status(200).json({
+      message: "Image approvals updated",
+      data: { isApproved: hasApprovedImages, imageApprovals },
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[photos] approveUserImageHandler error", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
