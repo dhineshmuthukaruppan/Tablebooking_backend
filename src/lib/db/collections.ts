@@ -1,4 +1,4 @@
-import type { Db } from "mongodb";
+import type { Db, ObjectId } from "mongodb";
 import type { UserDocument } from "./types";
 import { dbTables } from "../../databaseUtilities/constants/databaseConstants";
 
@@ -45,7 +45,7 @@ export async function ensureUsersIndexes(db: Db): Promise<void> {
   // keep the newest record and clear phoneNumber on older duplicates
   // so unique index creation does not fail at startup.
   const duplicatePhones = await coll
-    .aggregate<{ _id: string; ids: unknown[] }>([
+    .aggregate<{ _id: string; ids: ObjectId[] }>([
       { $match: { phoneNumber: { $type: "string" } } },
       { $sort: { updatedAt: -1, _id: -1 } },
       {
