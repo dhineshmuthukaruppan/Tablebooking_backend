@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
 import { ROLES, type Role } from "../../constants/roles";
 import type { UserStatus, UserDocument } from "../../lib/db/types";
@@ -136,6 +136,20 @@ export async function addUserHandler(req: Request, res: Response): Promise<void>
       query: { firebaseUid: decoded.uid },
     }) as UserDocument | null;
 
+    if (!user) {
+      const existingByEmail = await db.read.findOne({
+        req,
+        connectionString,
+        collection: "users",
+        query: { email },
+      }) as UserDocument | null;
+
+      if (existingByEmail && existingByEmail.firebaseUid !== decoded.uid) {
+        res.status(409).json({ message: "Email is already registered" });
+        return;
+      }
+    }
+
     const now = new Date();
 
     const role = (rawRole ?? user?.role ?? "user") as Role;
@@ -210,7 +224,24 @@ export async function addUserHandler(req: Request, res: Response): Promise<void>
         status: user.status,
       },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) {
+      const duplicateField = Object.keys(error.keyPattern ?? {})[0];
+      if (duplicateField === "email") {
+        res.status(409).json({ message: "Email is already registered" });
+        return;
+      }
+      if (duplicateField === "firebaseUid") {
+        res.status(409).json({ message: "User already exists" });
+        return;
+      }
+      if (duplicateField === "phoneNumber") {
+        res.status(409).json({ message: "Phone number is already registered" });
+        return;
+      }
+    }
+
+    console.error("[addUser] error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 }
