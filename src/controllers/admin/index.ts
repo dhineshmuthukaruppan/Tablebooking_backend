@@ -31,4 +31,6 @@ export {
 export {
   getStaffPermissionsHandler,
   putStaffPermissionsHandler,
+  getManagerPermissionsHandler,
+  putManagerPermissionsHandler,
 } from "./rbac.handler";
