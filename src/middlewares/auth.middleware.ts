@@ -34,13 +34,14 @@ export async function authenticate(
     const authProvider: UserDocument["authProvider"] =
       phoneNumber && !email ? "phone" : "email";
 
-    if (!user && email) {
+    if (!user && (email || phoneNumber)) {
       const now = new Date();
       const newUser: UserDocument = {
         firebaseUid: decoded.uid,
-        email,
+        ...(email ? { email } : {}),
         phoneNumber,
         role: "user",
+        status: "active",
         isEmailVerified,
         isPhoneVerified,
         authProvider,

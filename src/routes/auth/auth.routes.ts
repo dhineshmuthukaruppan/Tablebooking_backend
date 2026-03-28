@@ -10,6 +10,7 @@ const router = Router();
 
 router.post("/signin", authController.signinHandler);
 router.get("/me", auth.authentication.authenticate, authController.getMeHandler);
+router.get("/check-phone", authController.checkPhoneHandler);
 
 router.post("/login-phone", authController.phoneLoginHandler);
 router.post("/phone/login", authController.phoneLoginHandler);
