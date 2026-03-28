@@ -6,7 +6,6 @@ import type { UserDocument } from "../../lib/db/types";
 import { normalizePhoneNumber } from "../../lib/auth/phoneNumber";
 import {
   findUserByFirebaseUid,
-  findUserByPhoneNumber,
   insertUser,
   updateUserByFirebaseUid,
   upsertPhoneCredential,
@@ -73,7 +72,7 @@ export async function registerHandler(req: Request, res: Response): Promise<void
         query: { phoneNumber: normalizedPhone },
       })) as UserDocument | null;
 
-      if (existingUser) {
+      if (existingUser && existingUser.firebaseUid !== decoded.uid) {
         console.log("REGISTER BLOCKED -> existing phone", normalizedPhone);
         res.status(409).json({
           message: "User already exists",
@@ -206,6 +205,6 @@ export async function registerHandler(req: Request, res: Response): Promise<void
 
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[register] error:", message);
-    res.status(500).json({ message: "Phone signup could not be completed. Please try again." });
+    res.status(500).json({ message: "Registration could not be completed. Please try again." });
   }
 }
