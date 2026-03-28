@@ -5,3 +5,4 @@ export {
   setPhonePasswordHandler,
   resetPasswordPhoneHandler,
 } from "./phoneAuth.handler";
+export { checkPhoneHandler } from "./checkPhone.handler";

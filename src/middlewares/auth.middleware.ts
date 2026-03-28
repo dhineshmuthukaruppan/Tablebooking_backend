@@ -34,33 +34,7 @@ export async function authenticate(
     const authProvider: UserDocument["authProvider"] =
       phoneNumber && !email ? "phone" : "email";
 
-    if (!user && email) {
-      const now = new Date();
-      const newUser: UserDocument = {
-        firebaseUid: decoded.uid,
-        email,
-        phoneNumber,
-        role: "user",
-        isEmailVerified,
-        isPhoneVerified,
-        authProvider,
-        isEligibleForCoupons: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await db.create.insertOne({
-        req,
-        connectionString,
-        collection: "users",
-        payload: newUser as unknown as Record<string, unknown>,
-      });
-      user = await db.read.findOne({
-        req,
-        connectionString,
-        collection: "users",
-        query: { firebaseUid: decoded.uid },
-      }) as UserDocument | null;
-    } else if (user) {
+    if (user) {
       const updateFields: Partial<UserDocument> & { updatedAt: Date } = {
         updatedAt: new Date(),
       };

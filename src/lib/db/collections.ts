@@ -19,7 +19,7 @@ export async function ensureUsersIndexes(db: Db): Promise<void> {
   }
 
   await coll.updateMany(
-    { email: "" },
+    { $or: [{ email: "" }, { email: null }] },
     { $unset: { email: "" } }
   );
 
@@ -28,7 +28,55 @@ export async function ensureUsersIndexes(db: Db): Promise<void> {
     {
       unique: true,
       name: "email_1",
-      sparse: true,
+      partialFilterExpression: {
+        email: { $type: "string" },
+      },
+    }
+  );
+
+  await coll.updateMany(
+    {
+      $or: [{ phoneNumber: null }, { phoneNumber: "" }],
+    },
+    { $unset: { phoneNumber: "" } }
+  );
+
+  // Backfill safety: if legacy data has duplicate phone numbers,
+  // keep the newest record and clear phoneNumber on older duplicates
+  // so unique index creation does not fail at startup.
+  const duplicatePhones = await coll
+    .aggregate<{ _id: string; ids: unknown[] }>([
+      { $match: { phoneNumber: { $type: "string" } } },
+      { $sort: { updatedAt: -1, _id: -1 } },
+      {
+        $group: {
+          _id: "$phoneNumber",
+          ids: { $push: "$_id" },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ])
+    .toArray();
+
+  for (const dup of duplicatePhones) {
+    const idsToUnset = dup.ids.slice(1);
+    if (idsToUnset.length > 0) {
+      await coll.updateMany(
+        { _id: { $in: idsToUnset } },
+        { $unset: { phoneNumber: "" } }
+      );
+    }
+  }
+
+  await coll.createIndex(
+    { phoneNumber: 1 },
+    {
+      unique: true,
+      name: "phoneNumber_1",
+      partialFilterExpression: {
+        phoneNumber: { $type: "string" },
+      },
     }
   );
 }

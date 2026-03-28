@@ -6,7 +6,6 @@ import type { UserDocument } from "../../lib/db/types";
 import { normalizePhoneNumber } from "../../lib/auth/phoneNumber";
 import {
   findUserByFirebaseUid,
-  findUserByPhoneNumber,
   insertUser,
   updateUserByFirebaseUid,
   upsertPhoneCredential,
@@ -66,9 +65,19 @@ export async function registerHandler(req: Request, res: Response): Promise<void
     let user = await findUserByFirebaseUid(req, decoded.uid);
 
     if (normalizedPhone) {
-      const existingPhoneUser = await findUserByPhoneNumber(req, normalizedPhone);
-      if (existingPhoneUser && existingPhoneUser.firebaseUid !== decoded.uid) {
-        res.status(409).json({ message: "Phone number is already registered" });
+      const existingUser = (await db.read.findOne({
+        req,
+        connectionString: db.constants.connectionStrings.tableBooking,
+        collection: "users",
+        query: { phoneNumber: normalizedPhone },
+      })) as UserDocument | null;
+
+      if (existingUser && existingUser.firebaseUid !== decoded.uid) {
+        console.log("REGISTER BLOCKED -> existing phone", normalizedPhone);
+        res.status(409).json({
+          message: "User already exists",
+          code: "USER_ALREADY_EXISTS",
+        });
         return;
       }
     }
@@ -104,6 +113,7 @@ export async function registerHandler(req: Request, res: Response): Promise<void
       }
 
       await insertUser(req, newUser);
+      console.log("REGISTER DEBUG -> user created");
       user = await findUserByFirebaseUid(req, decoded.uid);
     } else {
       const updateFields: Record<string, unknown> = {
@@ -177,7 +187,10 @@ export async function registerHandler(req: Request, res: Response): Promise<void
     if (error instanceof MongoServerError && error.code === 11000) {
       const duplicateField = Object.keys(error.keyPattern ?? {})[0];
       if (duplicateField === "phoneNumber") {
-        res.status(409).json({ message: "Phone number is already registered" });
+        res.status(409).json({
+          message: "User already exists",
+          code: "USER_ALREADY_EXISTS",
+        });
         return;
       }
       if (duplicateField === "email") {
@@ -192,6 +205,6 @@ export async function registerHandler(req: Request, res: Response): Promise<void
 
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[register] error:", message);
-    res.status(500).json({ message: "Phone signup could not be completed. Please try again." });
+    res.status(500).json({ message: "Registration could not be completed. Please try again." });
   }
 }
