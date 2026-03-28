@@ -86,6 +86,20 @@ router.patch(
   adminController.patchUserHandler
 );
 
+router.get(
+  "/rbac/permissions",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin", "staff"),
+  adminController.getStaffPermissionsHandler
+);
+
+router.put(
+  "/rbac/permissions",
+  auth.authentication.authenticate,
+  auth.privilege.requireRoles("admin"),
+  adminController.putStaffPermissionsHandler
+);
+
 router.use("/master", masterRoutes);
 router.use("/menu", menuAdminRoutes);
 router.use("/coupons", adminCouponsRoutes);

@@ -7,35 +7,35 @@ const router = Router();
 router.get(
   "/",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   adminController.listAdminCouponsHandler
 );
 
 router.get(
   "/:id",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   adminController.getAdminCouponByIdHandler
 );
 
 router.post(
   "/",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   adminController.createCouponHandler
 );
 
 router.patch(
   "/:id",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   adminController.updateCouponHandler
 );
 
 router.delete(
   "/:id",
   auth.authentication.authenticate,
-  auth.privilege.requireRoles("admin"),
+  auth.privilege.requireRoles("admin", "staff"),
   adminController.softDeleteCouponHandler
 );
 

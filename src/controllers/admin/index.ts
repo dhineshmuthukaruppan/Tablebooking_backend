@@ -28,3 +28,7 @@ export {
   updateCouponHandler,
   softDeleteCouponHandler,
 } from "./coupons.handler";
+export {
+  getStaffPermissionsHandler,
+  putStaffPermissionsHandler,
+} from "./rbac.handler";

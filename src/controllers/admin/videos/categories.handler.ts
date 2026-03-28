@@ -6,17 +6,37 @@ function isObjectIdLike(v: string): boolean {
   return /^[a-fA-F0-9]{24}$/.test(v);
 }
 
+function getPagination(query: Request["query"]): { page: number; limit: number; skip: number } {
+  const pageRaw = typeof query.page === "string" ? Number(query.page) : 1;
+  const limitRaw = typeof query.limit === "string" ? Number(query.limit) : 20;
+  const page = Math.max(1, Number.isFinite(pageRaw) ? pageRaw : 1);
+  const limit = Math.min(500, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 20));
+  return { page, limit, skip: (page - 1) * limit };
+}
+
 export async function adminListVideoCategoriesHandler(req: Request, res: Response): Promise<void> {
   try {
     const connectionString = db.constants.connectionStrings.tableBooking;
-    const list = await db.read.find({
-      req,
-      connectionString,
-      collection: "video_categories",
-      query: {},
-      sort: { order: 1, createdAt: -1, name: 1 },
-    });
-    const data = (Array.isArray(list) ? list : []).map((c) => {
+    const { page, limit, skip } = getPagination(req.query);
+    const query = {};
+    const [list, total] = await Promise.all([
+      db.read.find({
+        req,
+        connectionString,
+        collection: "video_categories",
+        query,
+        sort: { order: 1, createdAt: -1, name: 1 },
+        skip,
+        limit,
+      }),
+      db.read.count({
+        req,
+        connectionString,
+        collection: "video_categories",
+        query,
+      }),
+    ]);
+    const items = (Array.isArray(list) ? list : []).map((c) => {
       const cat = c as {
         _id?: ObjectId;
         name?: string;
@@ -32,7 +52,7 @@ export async function adminListVideoCategoriesHandler(req: Request, res: Respons
         order: cat.order,
       };
     });
-    res.status(200).json({ message: "Video categories", data });
+    res.status(200).json({ message: "Video categories", data: { items, total: total ?? 0, page, limit } });
   } catch {
     res.status(500).json({ message: "Internal server error" });
   }

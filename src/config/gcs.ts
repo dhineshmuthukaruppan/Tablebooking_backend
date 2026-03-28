@@ -129,8 +129,13 @@ export async function generateSignedUploadUrl(params: {
     options.contentType = contentType;
   }
 
-  const [signedUrl] = await file.getSignedUrl(options as any);
-  return { signedUrl };
+  try {
+    const [signedUrl] = await file.getSignedUrl(options as any);
+    return { signedUrl };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`[gcs] Failed to generate signed upload URL for ${objectName}: ${message}`);
+  }
 }
 
 export type MenuImageFolder = "categories" | "products";

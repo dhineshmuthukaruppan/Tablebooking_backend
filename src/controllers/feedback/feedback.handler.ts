@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { MongoClient, ObjectId } from "mongodb";
 import db from "../../databaseUtilities";
-import { uploadPhoto, deleteFile } from "../../config/gcs";
+import { deleteFile, generateSignedUploadUrl } from "../../config/gcs";
 
 const FEEDBACK_SERVE_PATH = "/api/v1/photos/serve";
 
@@ -34,34 +34,32 @@ export async function getFeedbackByBookingIdHandler(req: Request, res: Response)
 /** POST /feedback/images — upload a single feedback media (image/video) to GCS and return its URL + object name. */
 export async function uploadFeedbackImageHandler(req: Request, res: Response): Promise<void> {
   try {
-    const file = (req as unknown as { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ message: "Media file is required" });
+    const fileName = typeof req.body?.fileName === "string" ? req.body.fileName.trim() : "";
+    const contentType = typeof req.body?.contentType === "string" ? req.body.contentType.trim() : "";
+    if (!fileName) {
+      res.status(400).json({ message: "fileName is required" });
       return;
     }
-    const isImage = typeof file.mimetype === "string" && file.mimetype.startsWith("image/");
-    const isVideo = typeof file.mimetype === "string" && file.mimetype.startsWith("video/");
+    if (!contentType) {
+      res.status(400).json({ message: "contentType is required" });
+      return;
+    }
+    const isImage = contentType.startsWith("image/");
+    const isVideo = contentType.startsWith("video/");
     if (!isImage && !isVideo) {
       res.status(400).json({ message: "Only image/video uploads are allowed" });
       return;
     }
-    if (isVideo && file.size > 20 * 1024 * 1024) {
-      res.status(400).json({ message: "Video size must be 20MB or smaller" });
-      return;
-    }
-    const uploadResult = await uploadPhoto({
-      buffer: file.buffer,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      // Reuse an existing category; keep feedback assets in a separate folder.
-      category: "ambience",
-      appFolder: "table-booking-feedback",
-    });
+    const safeName = fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const timestamp = Date.now();
+    const objectName = `table-booking-feedback/ambience/${timestamp}-${safeName}`;
+    const { signedUrl } = await generateSignedUploadUrl({ objectName, contentType });
     res.status(201).json({
-      message: "Feedback media uploaded",
+      message: "Feedback media upload initialized",
       data: {
-        url: `${FEEDBACK_SERVE_PATH}?object=${encodeURIComponent(uploadResult.objectName)}`,
-        objectName: uploadResult.objectName,
+        signedUrl,
+        url: `${FEEDBACK_SERVE_PATH}?object=${encodeURIComponent(objectName)}`,
+        objectName,
       },
     });
   } catch {
