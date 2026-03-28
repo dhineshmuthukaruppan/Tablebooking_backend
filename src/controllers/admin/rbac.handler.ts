@@ -95,3 +95,63 @@ export async function putStaffPermissionsHandler(req: Request, res: Response): P
     res.status(500).json({ message: "Internal server error" });
   }
 }
+
+export async function getManagerPermissionsHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const doc = (await db.read.findOne({
+      req,
+      connectionString,
+      collection: "staff_permissions",
+      query: { role: "manager" },
+    })) as StaffPermissionsDoc | null;
+
+    const allowedRoutes = doc?.allowedRoutes ?? DEFAULT_ALLOWED_ROUTES;
+    res.status(200).json({ data: { allowedRoutes } });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function putManagerPermissionsHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const body = req.body as { allowedRoutes?: unknown };
+    if (!Array.isArray(body.allowedRoutes)) {
+      res.status(400).json({ message: "allowedRoutes must be an array of strings" });
+      return;
+    }
+    const allowedRoutes = body.allowedRoutes.filter(
+      (r): r is string => typeof r === "string"
+    );
+
+    const connectionString = db.constants.connectionStrings.tableBooking;
+    const existing = await db.read.findOne({
+      req,
+      connectionString,
+      collection: "staff_permissions",
+      query: { role: "manager" },
+    });
+
+    const now = new Date();
+    if (existing) {
+      await db.update.updateOne({
+        req,
+        connectionString,
+        collection: "staff_permissions",
+        query: { role: "manager" },
+        update: { $set: { allowedRoutes, updatedAt: now } },
+      });
+    } else {
+      await db.create.insertOne({
+        req,
+        connectionString,
+        collection: "staff_permissions",
+        payload: { role: "manager", allowedRoutes, createdAt: now, updatedAt: now },
+      });
+    }
+
+    res.status(200).json({ message: "Manager permissions updated", data: { allowedRoutes } });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
