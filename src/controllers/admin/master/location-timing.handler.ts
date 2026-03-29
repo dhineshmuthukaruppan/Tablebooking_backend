@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import db from "../../../databaseUtilities";
 
 const VENUE_CONFIG_ID = "default";
+const DEFAULT_VENUE_TIME_ZONE = "Asia/Dubai";
 
 export interface LocationTimingDoc {
   address?: string;
@@ -23,9 +24,15 @@ async function getVenueDoc(req: Request): Promise<{ locationTiming?: LocationTim
 export async function getLocationTimingHandler(req: Request, res: Response): Promise<void> {
   try {
     const doc = await getVenueDoc(req);
+    const locationTiming = doc.locationTiming ?? {};
     res.status(200).json({
       message: "Location and timing",
-      data: doc.locationTiming ?? { address: "", mapLink: "", timingsText: "", timezone: "" },
+      data: {
+        address: locationTiming.address ?? "",
+        mapLink: locationTiming.mapLink ?? "",
+        timingsText: locationTiming.timingsText ?? "",
+        timezone: locationTiming.timezone?.trim() || DEFAULT_VENUE_TIME_ZONE,
+      },
     });
   } catch {
     res.status(500).json({ message: "Internal server error" });
@@ -44,7 +51,10 @@ export async function putLocationTimingHandler(req: Request, res: Response): Pro
       address: typeof body.address === "string" ? body.address.trim() : "",
       mapLink: typeof body.mapLink === "string" ? body.mapLink.trim() : "",
       timingsText: typeof body.timingsText === "string" ? body.timingsText.trim() : "",
-      timezone: typeof body.timezone === "string" ? body.timezone.trim() : "",
+      timezone:
+        typeof body.timezone === "string" && body.timezone.trim()
+          ? body.timezone.trim()
+          : DEFAULT_VENUE_TIME_ZONE,
     };
     const doc = await getVenueDoc(req);
     const facilities = Array.isArray(doc.facilities) ? doc.facilities : [];

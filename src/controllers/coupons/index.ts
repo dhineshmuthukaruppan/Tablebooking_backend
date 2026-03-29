@@ -92,6 +92,48 @@ export async function listCouponsHandler(req: Request, res: Response): Promise<v
   }
 }
 
+export async function listMyRedeemedCouponIdsHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const items = await db.read.find({
+      req,
+      connectionString: db.constants.connectionStrings.tableBooking,
+      collection: db.constants.dbTables.redeems,
+      query: {
+        userId: new ObjectId(userId.toString()),
+      },
+      projection: { couponId: 1, redeemedAt: 1, reservedAt: 1 },
+      sort: { redeemedAt: -1, reservedAt: -1 },
+    });
+
+    const couponIds = Array.from(
+      new Set(
+        (items as { couponId?: ObjectId | string | null }[])
+          .map((item) =>
+            item?.couponId instanceof ObjectId
+              ? item.couponId.toString()
+              : typeof item?.couponId === "string"
+                ? item.couponId
+                : null
+          )
+          .filter((value): value is string => !!value)
+      )
+    );
+
+    res.status(200).json({
+      message: "Redeemed coupons",
+      data: couponIds,
+    });
+  } catch {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 export function redeemCouponHandler(_req: Request, res: Response): void {
   res.status(200).json({
     message: "Coupon redemption scaffold endpoint",

@@ -19,6 +19,7 @@ import {
 import * as bookingSequence from "../../services/bookingSequence";
 
 const GENERAL_MASTER_QUERY = { type: "default" } as const;
+const DEFAULT_VENUE_TIME_ZONE = "Asia/Dubai";
 
 function formatBookingDate(date: Date): string {
   return date.toLocaleDateString("en-IN", {
@@ -59,6 +60,128 @@ function getWindowEndOfToday(daysOffset: number): { start: Date; end: Date } {
   start.setDate(start.getDate() - daysOffset);
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   return { start, end };
+}
+
+function parseDateKey(dateKey: string): { year: number; month: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return { year, month, day };
+}
+
+function dateKeyFromFormatterParts(parts: Intl.DateTimeFormatPart[]): string | null {
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!year || !month || !day) return null;
+  return `${year}-${month}-${day}`;
+}
+
+function isValidTimeZone(timeZone: string | null | undefined): timeZone is string {
+  if (!timeZone) return false;
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getDateKeyForZone(date: Date, timeZone?: string | null): string | null {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  if (!isValidTimeZone(timeZone)) return date.toISOString().slice(0, 10);
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return dateKeyFromFormatterParts(formatter.formatToParts(date));
+}
+
+function getTimeZoneRenderedAsUtc(date: Date, timeZone: string): number | null {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const year = Number(parts.find((part) => part.type === "year")?.value);
+    const month = Number(parts.find((part) => part.type === "month")?.value);
+    const day = Number(parts.find((part) => part.type === "day")?.value);
+    const hour = Number(parts.find((part) => part.type === "hour")?.value);
+    const minute = Number(parts.find((part) => part.type === "minute")?.value);
+    const second = Number(parts.find((part) => part.type === "second")?.value);
+    if ([year, month, day, hour, minute, second].some((value) => !Number.isFinite(value))) return null;
+    return Date.UTC(year, month - 1, day, hour, minute, second, 0);
+  } catch {
+    return null;
+  }
+}
+
+function buildDateTimeForZone(dateKey: string, time: string, timeZone?: string | null): Date | null {
+  const dateParts = parseDateKey(dateKey);
+  if (!dateParts) return null;
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!timeMatch) return null;
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+
+  if (!isValidTimeZone(timeZone)) {
+    const localDate = new Date(dateKey);
+    localDate.setHours(hour, minute, 0, 0);
+    return Number.isNaN(localDate.getTime()) ? null : localDate;
+  }
+
+  const targetUtc = Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day, hour, minute, 0, 0);
+  let resolved = new Date(targetUtc);
+  for (let i = 0; i < 2; i += 1) {
+    const renderedUtc = getTimeZoneRenderedAsUtc(resolved, timeZone);
+    if (renderedUtc == null) break;
+    const offset = renderedUtc - resolved.getTime();
+    resolved = new Date(targetUtc - offset);
+  }
+  return Number.isNaN(resolved.getTime()) ? null : resolved;
+}
+
+function getWeekdayNameFromDateKey(dateKey: string): string {
+  const parsed = parseDateKey(dateKey);
+  if (!parsed) return "sunday";
+  const weekdayIndex = new Date(
+    Date.UTC(parsed.year, parsed.month - 1, parsed.day, 12, 0, 0, 0)
+  ).getUTCDay();
+  return ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][
+    weekdayIndex
+  ];
+}
+
+async function getVenueTimeZone(req: Request): Promise<string | null> {
+  try {
+    const raw = await db.read.findOne({
+      req,
+      connectionString: db.constants.connectionStrings.tableBooking,
+      collection: "venue_config",
+      query: { _id: "default" },
+      projection: { "locationTiming.timezone": 1 },
+    });
+    const timeZone = (raw as { locationTiming?: { timezone?: unknown } } | null)?.locationTiming?.timezone;
+    return typeof timeZone === "string" && isValidTimeZone(timeZone.trim())
+      ? timeZone.trim()
+      : DEFAULT_VENUE_TIME_ZONE;
+  } catch {
+    return DEFAULT_VENUE_TIME_ZONE;
+  }
 }
 
 /** GET /bookings/feedback-pending — bookings in last 4 days (today-4 start to today end), status completed, feedbackRequired true, feedback null. For current user. */
@@ -154,12 +277,6 @@ export async function listBookingsHandler(req: Request, res: Response): Promise<
   }
 }
 
-function getWeekdayName(date: Date): string {
-  return ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][
-    date.getDay()
-  ];
-}
-
 function isTimeWithinRange(time: string, start: string, end: string): boolean {
   const toMinutes = (hhmm: string) => {
     const [h, m] = hhmm.split(":").map(Number);
@@ -235,6 +352,8 @@ export async function createBookingHandler(req: Request, res: Response): Promise
 
     const connectionString = db.constants.connectionStrings.tableBooking;
     const now = new Date();
+    const venueTimeZone = await getVenueTimeZone(req);
+    const bookingDateKey = bookingDateStr;
 
     const config = await slotConfigService.getSlotConfigForDate(req, sectionId, bookingDate);
     if (!config) {
@@ -347,7 +466,8 @@ export async function createBookingHandler(req: Request, res: Response): Promise
         }
 
         if (coupon.expiryDate instanceof Date && !Number.isNaN(coupon.expiryDate.getTime())) {
-          if (coupon.expiryDate.getTime() < bookingDate.getTime()) {
+          const expiryDateKey = getDateKeyForZone(coupon.expiryDate, venueTimeZone);
+          if (expiryDateKey && expiryDateKey < bookingDateKey) {
             if (invalidResponse()) return;
           }
         }
@@ -366,11 +486,10 @@ export async function createBookingHandler(req: Request, res: Response): Promise
 
         // 1) Custom date offers – match by date only.
         if (Array.isArray(offer.customDates) && offer.customDates.length > 0) {
-          const bookingKey = bookingDate.toISOString().slice(0, 10);
           for (const cd of offer.customDates) {
             if (!(cd.date instanceof Date)) continue;
-            const cdKey = cd.date.toISOString().slice(0, 10);
-            if (cdKey === bookingKey && typeof cd.percentage === "number") {
+            const cdKey = getDateKeyForZone(cd.date, venueTimeZone);
+            if (cdKey === bookingDateKey && typeof cd.percentage === "number") {
               percentage = cd.percentage;
               break;
             }
@@ -379,9 +498,11 @@ export async function createBookingHandler(req: Request, res: Response): Promise
 
         // 2) Special date ranges – slot start must fall within enabled range.
         if (!percentage && Array.isArray(offer.specialDateRanges) && offer.specialDateRanges.length > 0) {
-          const slotStart = new Date(bookingDate);
-          const [sh, sm] = startTime.split(":").map(Number);
-          slotStart.setHours(sh || 0, sm || 0, 0, 0);
+          const slotStart = buildDateTimeForZone(bookingDateKey, startTime, venueTimeZone);
+          if (!slotStart) {
+            invalidResponse();
+            return;
+          }
           for (const sr of offer.specialDateRanges) {
             if (sr.isEnabled === false) continue;
             const startDt = sr.startDateTime instanceof Date ? sr.startDateTime : null;
@@ -398,7 +519,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
 
         // 3) Weekday offers.
         if (!percentage && offer.weekday?.isEnabled) {
-          const weekday = getWeekdayName(bookingDate);
+          const weekday = getWeekdayNameFromDateKey(bookingDateKey);
           const days = offer.weekday.days ?? {};
           const pct = days[weekday] ?? (days as Record<string, number | undefined>)[weekday.toLowerCase()];
           if (typeof pct === "number" && pct > 0) {
@@ -413,7 +534,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
 
         // Conditions.
         const conditions = coupon.conditions ?? {};
-        const bookingWeekday = getWeekdayName(bookingDate);
+        const bookingWeekday = getWeekdayNameFromDateKey(bookingDateKey);
         if (conditions.minGuestCount && guestCount < conditions.minGuestCount) {
           if (invalidResponse()) return;
         }
@@ -447,6 +568,14 @@ export async function createBookingHandler(req: Request, res: Response): Promise
         }
 
         // Client/server mismatch guard (prevents stale UI / tampering).
+        console.log("coupon applied percentage", {
+          percentage,
+          appliedPercentageFromClient,
+          bookingDateKey,
+          startTime,
+          venueTimeZone,
+        });
+        
         if (appliedPercentageFromClient !== null && appliedPercentageFromClient !== Math.floor(percentage)) {
           res.status(400).json({ message: "Coupon mismatch. Please select the coupon again." });
           return;
