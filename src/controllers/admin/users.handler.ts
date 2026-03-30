@@ -9,6 +9,7 @@ export async function getUsersHandler(req: Request, res: Response): Promise<void
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     const role = (Array.isArray(req.query.role) ? req.query.role[0] : req.query.role) as Role | undefined;
     const isEmailVerified = Array.isArray(req.query.isEmailVerified) ? req.query.isEmailVerified[0] : req.query.isEmailVerified;
+    const isPhoneVerified = Array.isArray(req.query.isPhoneVerified) ? req.query.isPhoneVerified[0] : req.query.isPhoneVerified;
     const isEligibleForCoupons = Array.isArray(req.query.isEligibleForCoupons) ? req.query.isEligibleForCoupons[0] : req.query.isEligibleForCoupons;
 
     const connectionString = db.constants.connectionStrings.tableBooking;
@@ -17,8 +18,13 @@ export async function getUsersHandler(req: Request, res: Response): Promise<void
     if (role && ROLES.includes(role)) filter.role = role;
     if (isEmailVerified === "true") filter.isEmailVerified = true;
     if (isEmailVerified === "false") filter.isEmailVerified = false;
+    if (isPhoneVerified === "true") filter.isPhoneVerified = true;
+    if (isPhoneVerified === "false") filter.isPhoneVerified = false;
+
     if (isEligibleForCoupons === "true") filter.isEligibleForCoupons = true;
     if (isEligibleForCoupons === "false") filter.isEligibleForCoupons = false;
+
+    console.log("User filters:", filter);
 
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([

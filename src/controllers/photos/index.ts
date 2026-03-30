@@ -193,13 +193,18 @@ export async function cleanupUserPhotoUploadHandler(req: Request, res: Response)
     }
 
     const userPrefix = `table-booking/user-uploads/${user.id.toString()}/`;
+    const allowedPrefixes = [
+      userPrefix,
+      "table-booking/menu/categories/",
+      "table-booking/menu/products/",
+    ];
     const ownedObjectNames = objectNames.filter(
       (objectName: unknown): objectName is string =>
-        typeof objectName === "string" && objectName.startsWith(userPrefix)
+        typeof objectName === "string" && allowedPrefixes.some((prefix) => objectName.startsWith(prefix))
     );
 
     if (ownedObjectNames.length === 0) {
-      res.status(400).json({ message: "No valid user-upload objects provided" });
+      res.status(400).json({ message: "No valid cleanup objects provided" });
       return;
     }
 
@@ -572,3 +577,4 @@ export async function approveUserImageHandler(req: Request, res: Response): Prom
     res.status(500).json({ message: "Internal server error" });
   }
 }
+

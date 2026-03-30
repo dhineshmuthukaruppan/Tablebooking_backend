@@ -5,6 +5,7 @@ import { ROLES, type Role } from "../../constants/roles";
 import type { UserStatus, UserDocument } from "../../lib/db/types";
 import { firebaseAdminAuth } from "../../config/firebase-admin";
 import { verifyIdToken } from "../../lib/auth/verifyFirebaseToken";
+import { is } from "zod/v4/locales";
 
 export interface ListUsersBody {
   page?: number;
@@ -12,6 +13,7 @@ export interface ListUsersBody {
   role?: string[];
   status?: string[];
   isEmailVerified?: string;
+  isPhoneVerified?: string;
 }
 
 async function listUsers(
@@ -20,7 +22,8 @@ async function listUsers(
   limit: number,
   roles: string[],
   statuses: string[],
-  isEmailVerified: string | undefined
+  isEmailVerified: string | undefined,
+  isPhoneVerified: string | undefined
 ): Promise<{ items: unknown[]; total: number }> {
   const validRoles = roles.filter((r) => ROLES.includes(r as Role));
   const validStatuses = statuses.filter((s) => s === "active" || s === "inactive");
@@ -32,6 +35,8 @@ async function listUsers(
   if (validStatuses.length > 0) filter.status = { $in: validStatuses };
   if (isEmailVerified === "true") filter.isEmailVerified = true;
   if (isEmailVerified === "false") filter.isEmailVerified = false;
+  if (isPhoneVerified === "true") filter.isPhoneVerified = true; 
+  if (isPhoneVerified === "false") filter.isPhoneVerified = false;
 
   const [items, total] = await Promise.all([
     db.read.find({
@@ -64,8 +69,9 @@ export async function getUsersHandler(req: Request, res: Response): Promise<void
     const roles = (Array.isArray(roleParam) ? roleParam : roleParam ? [roleParam] : []) as string[];
     const statuses = (Array.isArray(statusParam) ? statusParam : statusParam ? [statusParam] : []) as string[];
     const isEmailVerified = (Array.isArray(req.query.isEmailVerified) ? req.query.isEmailVerified[0] : req.query.isEmailVerified) as string | undefined;
+    const isPhoneVerified = (Array.isArray(req.query.isPhoneVerified) ? req.query.isPhoneVerified[0] : req.query.isPhoneVerified) as string | undefined;
 
-    const { items, total } = await listUsers(req, page, limit, roles, statuses, isEmailVerified);
+    const { items, total } = await listUsers(req, page, limit, roles, statuses, isEmailVerified, isPhoneVerified);
 
     res.status(200).json({
       message: "User list",
@@ -85,8 +91,8 @@ export async function listUsersPostHandler(req: Request, res: Response): Promise
     const roles = Array.isArray(body.role) ? body.role : [];
     const statuses = Array.isArray(body.status) ? body.status : [];
     const isEmailVerified = typeof body.isEmailVerified === "string" ? body.isEmailVerified : undefined;
-
-    const { items, total } = await listUsers(req, page, limit, roles, statuses, isEmailVerified);
+    const isPhoneVerified = typeof body.isPhoneVerified === "string" ? body.isPhoneVerified : undefined;
+    const { items, total } = await listUsers(req, page, limit, roles, statuses, isEmailVerified, isPhoneVerified);
 
     res.status(200).json({
       message: "User list",
